@@ -1,0 +1,26 @@
+## Backup files
+*~
+
+## Core latex/pdflatex auxiliary files:
+*.aux
+*.lof
+*.log
+*.lot
+*.lol
+*.fls
+*.out
+*.toc
+
+## Intermediate documents:
+*.dvi
+*.ps
+# *.eps
+thesis.pdf
+
+## Bibliography auxiliary files (bibtex/biblatex/biber):
+*.bbl
+*.bcf
+*.blg
+*-blx.aux
+*-blx.bib
+*.run.xml
