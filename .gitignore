@@ -24,3 +24,6 @@ thesis.pdf
 *-blx.aux
 *-blx.bib
 *.run.xml
+
+## latexmk
+*_latexmk
