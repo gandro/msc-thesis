@@ -117,7 +117,7 @@
 % [REMOVED DUE TO OTHER PROBLEMS, SEE ISSUE #82]    
 %\DeclareCaptionLabelFormat{smallcaps}{\bothIfFirst{#1}{~}\MakeTextLowercase{\textsc{#2}}}
 %\captionsetup{font=small,labelformat=smallcaps} % format=hang,
-\captionsetup{font=small} % format=hang,
+\captionsetup{font=small,labelfont=it,format=plain} % format=hang,
 \usepackage{subfig}  
 % ****************************************************************************************************
 
@@ -127,23 +127,44 @@
 % ****************************************************************************************************
 \usepackage{listings} 
 %\lstset{emph={trueIndex,root},emphstyle=\color{BlueViolet}}%\underbar} % for special keywords
-\lstset{language=[LaTeX]Tex,%C++,
+
+% Define Language
+\lstdefinelanguage{Rust}
+{
+  % list of keywords
+  morekeywords={
+    abstract,alignof,as,become,box,break,const,continue,crate,do,else,enum,
+        extern,false,final,fn,for,if,impl,in,let,loop,macro,match,mod,move,mut,
+        offsetof,override,priv,proc,pub,pure,ref,return,Self,self,sizeof,
+        static,struct,super,trait,true,type,typeof,unsafe,unsized,use,virtual,
+        where,while,yield
+  },
+  otherkeywords={:,\.,|,=,=>,->,\#!,?},
+  sensitive, % keywords are not case-sensitive
+  morecomment=[l]{//}, % l is for line comment
+  morecomment=[s]{/*}{*/}, % s is for start and end delimiter
+  morestring=[b]" % defines that strings are enclosed in double quotes
+}
+
+\lstset{language=Rust,%C++,
     morekeywords={PassOptionsToPackage,selectlanguage},
     keywordstyle=\color{RoyalBlue},%\bfseries,
-    basicstyle=\small\ttfamily,
-    %identifierstyle=\color{NavyBlue},
+    basicstyle=\small\color{darkgray}\ttfamily,
+    identifierstyle=\color{Black},
     commentstyle=\color{Green}\ttfamily,
-    stringstyle=\rmfamily,
+    stringstyle=\color{Maroon}\ttfamily,
     numbers=none,%left,%
     numberstyle=\scriptsize,%\tiny
     stepnumber=5,
     numbersep=8pt,
     showstringspaces=false,
     breaklines=true,
-    %frameround=ftff,
+    %frameround=tttt,
     %frame=single,
-    belowcaptionskip=.75\baselineskip
-    %frame=L
+    frame=lines,
+    backgroundcolor=\color{lstbackground},
+    captionpos=b,
+    belowcaptionskip=.75\baselineskip,
 } 
 % ****************************************************************************************************             
 
