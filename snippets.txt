@@ -1,0 +1,12 @@
+## query design (or impl)
+
+TODO This is the description of a query from the user perspective. How does the
+coordinator see it?
+
+\subsection{Submission}
+
+The compilation of a query's source code into a runnable binary is done
+at the client side. This allows the user to link against arbitrary
+libraries which they might use in their query program. 
+
+
