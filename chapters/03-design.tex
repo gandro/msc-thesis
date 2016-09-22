@@ -1,7 +1,7 @@
 \chapter{Design}\label{ch:design}
 
 This section discusses the design of the system. The first part explains query
-spawning and execution, the second part describes how data stream can be shared
+spawning and execution, the second part describes how data streams can be shared
 between queries.
 
 \section{Overall Architecture}
@@ -86,7 +86,7 @@ and distribution of the worker threads which will drive the query.
 
 Optionally, a human-readable description of the query,
 as well as the command-line arguments to be passed to the executable can be
-provided. (TODO: this is currently not implemented)
+provided. \TODO{this is currently not implemented}
 
 When handling a new query submission request, the coordinator will assign a
 unique identifier to the incoming query, and then select a
@@ -94,19 +94,26 @@ matching number of executors for the query to be spawned on. The selection
 of executors is based on the runtime configuration provided by the submission
 request.
 
-The coordinator plays a important role when spawning new queries. After
+The coordinator plays an important role when spawning new queries. After
 issuing query spawn requests to the executors, it waits for all query processes
 to register themselves at the coordinator before they begin their computation.
 Only then the query is considered active and the submission request
 is reported to be completed.
 
+\begin{figure}[htb]
+  \centering
+    \includegraphics[width=1\textwidth]{figures/spawn_singleprocess}
+  \caption[Query submission with single process.]{Submission of a query on a single executor.
+  Only once the spawned query announces itself at the coordinator is it considered running.}
+  \label{fig:subsingle}
+\end{figure}
 
 \section{Executors}
 
 Executors are a processes responsible for query spawning and supervision. Typically,
 every machine supposed to host query processes will require an executor
-instance. Executors register themselves at the coordinator, telling it the type
-of binary they are able to execute. 
+instance. Executors register themselves at the coordinator, informing it about
+the type of binary they are able to execute. 
 
 Executors, and thus machines, can easily be added to the system and can be used
 to host new incoming queries. Due to how Timely implements its worker allocation,
@@ -119,10 +126,97 @@ it. The notified executor will then fetch the query binary from the specified UR
 and typically spawn it as a new process.
 
 When spawning a new query process, the executor will also supply the newly created
-process with the information the process needs in order to participate as a query:
+process with the information it needs in order to participate as a query:
 The address of the coordinator, the address of any peer processes belonging to the 
 same query, the number of worker threads to spawn and the query's own identifier.
 
-\section{}
+\section{Exposing data streams}
 
-Pubsub
+Dataflow programs often work on streams from external sources. As the same
+data source might be processed by multiple dataflow computations, it is
+appropriate to manage these streams in our system as well. In some cases, it
+might be desirable to perform some preprocessing on the raw data stream.
+
+These assumptions motivate us to extend our system by adding functionality
+for queries to expose their data streams for consumption by other queries. To
+achieve this, we extend Timely with two operators. Using the \emph{publish}
+operator, a query can announce one of its stream (an edge in the dataflow graph),
+which in turn then other queries can \emph{subscribe} to.
+Loosely following the terminology of other publish/subscribe
+systems, we call such a published stream a \emph{topic}.
+
+\subsection{Topics}
+
+A topic has the following properties, which are all stored in the catalog
+and can be accessed by other queries.
+\begin{description}
+\item [Identifier] A unique identifier for the topic instance.
+\item [Name] When publishing a stream, the publisher has to assign a name to it.
+Queries use this name to refer to topics they want to subscribe to. There might
+be only one topic with a certain name at a time, however names can be reused if
+topics are unpublished.
+\item [Data type] A descriptor of the data type published in this topic. Timely's
+streams are typed channels, therefore so are topics.
+\item [Address] An address to which the subscribers connect in order to received
+the contents of the published stream.
+\end{description}
+
+While every publication and subscription request is disclosed to the coordinator
+and the catalog contains a list of all existing topics, the
+actual exchange of data happens directly between queries. When a query subscribes
+to a topic, it receives the address of the topic's publisher from the coordinator
+and directly connects to it.
+
+\subsection{Publisher}
+
+A publisher is a Timely operator which exposes its input edge as a topic. When
+creating it, the query author has to assign a name for the topic under which the
+input stream will be published. As with all other Timely operators, the publisher
+operator is instantiated on all worker threads. However, the user can choose
+whether all worker streams are merged into a single topic before publishing, or
+if each worker publishes its own topic. The latter option implicitly exposes
+the data sharding strategy of the publishing query, allowing the workers of
+the subscribing query to exploit it.
+
+\TODO{Writing this I realize this is something that the decision of not merging
+the streams should be done on the subscriber side, not the publisher side}
+
+% TODO stripping of timestamps
+
+\subsection{Subscriber}
+
+In order to subscribe to a topic, the subscribing query has to provide the name
+of the topic it is interested in. This involves a name lookup which can optionally
+be blocking: If a requested topic does not yet exist, the coordinator will add
+the subscriber to a wait list. Once a corresponding topic is published under that
+name, the coordinator will inform the subscriber about this topic. 
+
+The subscribing query might use different timestamps in its dataflow graph
+than the publisher, thus it is the subscribers responsibility to re-add
+timestamps to the received stream. 
+
+\TODO{The story with multiple worker threads in the subscribing query is
+not really clear as well.}
+
+\TODO{The timestamps are currently stripped at the publisher, maybe we would
+like to optionally ship then and use them at the subscriber at in some way.}
+
+\subsection{Limitations}
+
+In contrast to Timely's capture and replay operators, we currently do not make
+any use of Timely's timestamps or progress tracking. 
+
+Because timestamps are defined by the scope in which they are used, most subscribers would need to
+convert the published timestamps to local ones.
+
+In order to have progress tracking notifications on a topic, a publisher would
+have to keep track of the frontier and 
+
+
+
+Secondly, the capture operator buffers all incoming data and events. This is
+not the case for the publisher operator: If there are no subscribers on a topic,
+the data arriving at the publisher is discarded.
+
+
+

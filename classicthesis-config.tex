@@ -25,7 +25,8 @@
 % ****************************************************************************************************
 \PassOptionsToPackage{eulerchapternumbers,listings,%drafting,%
                       pdfspacing,floatperchapter,%linedheaders,%
-                      subfig,beramono,eulermath,parts}{classicthesis}                                        
+                      beramono,%
+                      subfig,eulermath,parts}{classicthesis}                                        
 % ********************************************************************
 % Available options for classicthesis.sty 
 % (see ClassicThesis.pdf for more information):
@@ -59,6 +60,15 @@
 % ****************************************************************************************************
 % 3. Loading some handy packages
 % ****************************************************************************************************
+% ********************************************************************
+% Shut up warnings
+% ********************************************************************
+\usepackage{silence}
+\WarningFilter{scrreprt}{Usage of package `titlesec'}
+%\WarningFilter{scrreprt}{Activating an ugly workaround}
+\WarningFilter{fixltx2e}{}
+\WarningFilter{titlesec}{Non standard sectioning command detected}
+
 % ******************************************************************** 
 % Packages with options that might require adjustments
 % ******************************************************************** 
@@ -66,6 +76,11 @@
 % Spanish languages need extra options in order to work with this template
 %\PassOptionsToPackage{spanish,es-lcroman}{babel}
     \usepackage{babel}                  
+
+\usepackage{hyphenat}
+\hyphenation{que-ries data-flow time-stamp}
+
+\newcommand\TODO[1]{\textcolor{Maroon}{\textbf{TODO:} #1}}
 
 \usepackage{csquotes}
 \PassOptionsToPackage{%
@@ -160,8 +175,8 @@
     showstringspaces=false,
     breaklines=true,
     %frameround=tttt,
-    %frame=single,
-    frame=lines,
+    frame=single,
+    rulecolor=\color{lstbackground},
     backgroundcolor=\color{lstbackground},
     captionpos=b,
     belowcaptionskip=.75\baselineskip,
@@ -249,7 +264,7 @@
 % ********************************************************************
 % Development Stuff
 % ********************************************************************
-\listfiles
+%\listfiles
 %\PassOptionsToPackage{l2tabu,orthodox,abort}{nag}
 %   \usepackage{nag}
 %\PassOptionsToPackage{warning, all}{onlyamsmath}
