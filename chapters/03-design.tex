@@ -21,8 +21,9 @@ which stores the system state in the \emph{catalog}.
 
 \section{Coordinator}
 
-The coordinator is the central process managing all the components
-of the system. In order to receive commands and report their internal state,
+The purpose of the coordinator is to manage all components of the system. It
+provides an interface for users to submit new queries and inspect the current
+state of the system. In order to receive commands and report their internal state,
 every executor and query process maintains a network connection to the coordinator.
 
 Bookkeeping of the system is done by the coordinator in the catalog. The
@@ -110,10 +111,28 @@ is reported to be completed.
 
 \section{Executors}
 
-Executors are a processes responsible for query spawning and supervision. Typically,
-every machine supposed to host query processes will require an executor
-instance. Executors register themselves at the coordinator, informing it about
-the type of binary they are able to execute. 
+The actual execution and direct supervision of query processes is not done by the
+coordinator itself, but is offloaded to designated processes called executors.
+This choice allows for more flexibility regarding query execution and the
+management of available resources. Since executors can be dynamically be added
+to the system, and with some limitations also be removed again, they provide
+for instance a way to add new machines to the cluster running our system.
+
+Another feature of executors are that they offer choice on how queries and their
+worker threads are supposed to be executed and scheduled. When a executor joins
+the system by introducing itself to the coordinator, the executor also informs
+the coordinator about the execution format it supports.
+
+In the current implementation, the only supported execution format are native
+operating system executables which are spawned as separate processes. However,
+alternative executor implementations could for example host multiple queries
+within the same process, by dynamically loading the query's code into an already
+running process and run it on a preemptive OS thread. This could allow queries
+the interchange of objects without the need for data serialization. Given
+the implementation of Timely's operator scheduling, cooperative scheduling
+of multiple worker threads on a single operating system thread is conceivable.
+
+\TODO{rewrite the rest of this section, the part below doesn't match anymore}
 
 Executors, and thus machines, can easily be added to the system and can be used
 to host new incoming queries. Due to how Timely implements its worker allocation,
