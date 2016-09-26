@@ -6,8 +6,8 @@ between queries.
 
 \section{Overall Architecture}
 
-Our system consists of multiple components which are briefly described in this
-paragraph. A dataflow program submitted to run as part of the system is
+Our system consists of multiple components which are briefly described here.
+A dataflow program submitted to run as part of the system is
 called a \emph{query}. Following Timely's terminology, the execution of a query
 is done by a group of \emph{worker} threads. Each worker manages the scheduling and
 notification of the nodes that are part instance of the dataflow graph. 
@@ -48,7 +48,7 @@ executors, the running queries and their workers.
 
 A query is a Timely program managed and executed by our system. Like
 standalone Timely Dataflow programs, queries are written in Rust by using the
-Timely library: The dataflow graph is constructed by connecting
+Timely Dataflow library: The dataflow graph is constructed by connecting
 Timely's operators (vertices) to stream objects (edges).
 
 In order for a Timely Dataflow program to become a runnable query on the system,
@@ -127,27 +127,33 @@ In the current implementation, the only supported execution format are native
 operating system executables which are spawned as separate processes. However,
 alternative executor implementations could for example host multiple queries
 within the same process, by dynamically loading the query's code into an already
-running process and run it on a preemptive OS thread. This could allow queries
+running process and run it on a preemptive OS thread. This would allow queries
 the interchange of objects without the need for data serialization. Given
 the implementation of Timely's operator scheduling, cooperative scheduling
-of multiple worker threads on a single operating system thread is conceivable.
+of multiple worker threads on a single operating system thread would be
+conceivable.
 
-\TODO{rewrite the rest of this section, the part below doesn't match anymore}
+It is also the executors task to fetch query binaries before execution. When
+submitting a new query, the submitter provides the coordinator with the URL of
+the binary. This URL is forwarded to selected executors, which will use it to
+download the query binary.
 
-Executors, and thus machines, can easily be added to the system and can be used
-to host new incoming queries. Due to how Timely implements its worker allocation,
-it is not possible to extend already running queries to newly added executors.
-Depending on the implementation of the executor, it might also be able to
-deregister itself without terminating the query process it spawned.
-
-If there is a new query to be executed on an executor, the coordinator will notify
-it. The notified executor will then fetch the query binary from the specified URL
-and typically spawn it as a new process.
-
-When spawning a new query process, the executor will also supply the newly created
-process with the information it needs in order to participate as a query:
-The address of the coordinator, the address of any peer processes belonging to the 
+When spawning a new query, the query process and its executor coordinate:
+The executor will supply the newly created process with the information
+it needs in order to participate in the system. This includes
+the address of the coordinator, the address of any peer processes belonging to the 
 same query, the number of worker threads to spawn and the query's own identifier.
+Using this information, the query process will spawn its worker threads on behalf
+of the executor.
+
+A query might span over multiple executors. The placement of a query on the
+available executors is performed by the coordinator, based on the users request.
+We currently implement a naive approach to query placement, where the executors
+are chosen randomly. A more sophisticated scheduling, which for example could
+include load balancing, has to be investigated.
+
+\TODO{Maybe talk about the removal of executors, in the case of OS processes they could
+be removed before their queries terminate.}
 
 \section{Exposing data streams}
 
@@ -157,12 +163,30 @@ appropriate to manage these streams in our system as well. In some cases, it
 might be desirable to perform some preprocessing on the raw data stream.
 
 These assumptions motivate us to extend our system by adding functionality
-for queries to expose their data streams for consumption by other queries. To
-achieve this, we extend Timely with two operators. Using the \emph{publish}
-operator, a query can announce one of its stream (an edge in the dataflow graph),
-which in turn then other queries can \emph{subscribe} to.
-Loosely following the terminology of other publish/subscribe
-systems, we call such a published stream a \emph{topic}.
+for queries to expose their data streams for consumption by other queries.
+The Timely library already offers the capture and replay for this purpose, where
+all timestamp, data and event records are captured in one query, and can then
+be replayed in another one.
+
+The implementation of the replay operator requires it to use the same timestamps
+as the capture operator, forcing both queries to have a similar structure
+in their dataflow graph, as a timestamp received at an operator is defined
+by its surrounding scope. Another feature of the capture/replay operator pair
+is that they will replay the whole stream from beginning to end, requiring the
+capture operator to either buffer its incoming data or wait for the replaying
+query to connect to it.
+
+Both these requirements stem from the fact that the replay operator not only
+replays the data stream, but also all progress tracking events, including
+notifications. In our system, we opted for a more dynamic approach, where
+producing queries are allowed to discard data if there are no consumers, and
+where consumers use the streams as inputs for their own computation,
+allowing them to assign their own timestamps to the data stream.
+
+We loosely adapted the terminology of publish/subscribe systems: Using the
+\emph{publish} operator, a query can expose one of its stream
+(an edge in the dataflow graph) to other queries, which in turn then \emph{subscribe}
+to it. The list of all published topics is stored at in the catalog.
 
 \subsection{Topics}
 
@@ -197,10 +221,10 @@ if each worker publishes its own topic. The latter option implicitly exposes
 the data sharding strategy of the publishing query, allowing the workers of
 the subscribing query to exploit it.
 
-\TODO{Writing this I realize this is something that the decision of not merging
-the streams should be done on the subscriber side, not the publisher side}
-
-% TODO stripping of timestamps
+\TODO{Writing this I realized that we probably want to change this, a topic
+should be a conceptual stream, which may or may not contain the shared substream.
+Subscribers should decide if they want to subscribe to the merged stream, or
+just one shard.}
 
 \subsection{Subscriber}
 
@@ -216,26 +240,6 @@ timestamps to the received stream.
 
 \TODO{The story with multiple worker threads in the subscribing query is
 not really clear as well.}
-
-\TODO{The timestamps are currently stripped at the publisher, maybe we would
-like to optionally ship then and use them at the subscriber at in some way.}
-
-\subsection{Limitations}
-
-In contrast to Timely's capture and replay operators, we currently do not make
-any use of Timely's timestamps or progress tracking. 
-
-Because timestamps are defined by the scope in which they are used, most subscribers would need to
-convert the published timestamps to local ones.
-
-In order to have progress tracking notifications on a topic, a publisher would
-have to keep track of the frontier and 
-
-
-
-Secondly, the capture operator buffers all incoming data and events. This is
-not the case for the publisher operator: If there are no subscribers on a topic,
-the data arriving at the publisher is discarded.
 
 
 
