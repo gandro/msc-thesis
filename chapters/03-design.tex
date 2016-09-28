@@ -226,6 +226,37 @@ should be a conceptual stream, which may or may not contain the shared substream
 Subscribers should decide if they want to subscribe to the merged stream, or
 just one shard.}
 
+\subsubsection{Collection Publisher}
+
+Normally, publishers are not buffered, meaning subscribers will
+not receive any data which was produced before they subscribed to a certain
+topic. This is consistent with many other publish/subscribe systems, where
+synchronization between publishers and subscribers is decoupled as well. \cite{pubsub}
+
+This however might be too limiting for some use cases where previously published
+data might is essential for a full understanding of the data stream. A simple
+solution for this problem would be to buffer the stream at the publisher
+and replay it to every incoming subscriber. While simple, this approach
+would be wasteful in cases where the data in the buffer becomes stale and
+irrelevant to future subscribers. \TODO{this doesn't motivate \emph{unordered}
+multisets}
+
+For this reason, we introduce a different kind of publisher which publishes
+\emph{collections} instead of streams. A published collection is a typed, unordered
+multiset. Upon creation, a collection publisher contains an empty collection.
+When the publishing query mutates the collection by adding or removing elements,
+these changes are propagated to the subscribers. When new subscribers connect
+to this publisher, they will initially receive a list of all currently contained
+elements. This way, all subscribers maintain the same view of the data collection.
+
+From the subscribers point of view, a topic published by a collection publisher
+is not inherently different from a normal topic: After subscribing, it will
+observe a continuous stream of data. The difference is in the data type of the
+stream, it will be of tuples of the format $(\texttt{D}, \delta)$. This format
+is compatible with Differential Dataflow, allowing subscribing queries to
+further process the collection in a convenient manner.
+
+
 \subsection{Subscriber}
 
 In order to subscribe to a topic, the subscribing query has to provide the name
