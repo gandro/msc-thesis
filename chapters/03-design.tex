@@ -16,19 +16,31 @@ A query is executed by one or more \emph{executors}. Each executor selected to
 execute a query will fetch and invoke the query binary, ultimately spawning the
 worker threads. 
 
-All these components are managed by a process called the \emph{coordinator},
-which stores the system state in the \emph{catalog}.
+All these components are managed by a central process called the \emph{coordinator},
+which stores the system state in the \emph{catalog}. In addition to managing
+query execution, the coordinator also allows for query composition: Queries can
+publish the results of their dataflow computation as \emph{topics}, which in turn
+other queries can subscribe to.
 
-\section{Coordinator}
+\begin{table}
+    \myfloatalign
+  \begin{tabularx}{\textwidth}{lX} \toprule
+    \tableheadline{Component} & \tableheadline{Description} \\ \midrule
+    Query & \\
+    Dataflow Graph & \\
+    Worker & \\
+    Executor & \\
+    Coordinator & \\
+    Catalog & \\
+    Submission & \\
+    Topics & \\
+    Publisher & \\
+    Subscriber & \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Terminology of the system}  \label{tab:design-terminology}
+\end{table}
 
-The purpose of the coordinator is to manage all components of the system. It
-provides an interface for users to submit new queries and inspect the current
-state of the system. In order to receive commands and report their internal state,
-every executor and query process maintains a network connection to the coordinator.
-
-Bookkeeping of the system is done by the coordinator in the catalog. The
-catalog is a datastructure which contains all information about the available
-executors, the running queries and their workers. 
 
 \begin{figure}[htb]
   \centering
@@ -56,8 +68,8 @@ it needs to register its computational logic with with our system library instea
 using Timely Dataflow's initialization function. This
 \lstinline{timely_query::execute} function not only performs the initialization
 for the query, it also provides additional functionality to interact with the
-coordinator. Other than this, there are no no restrictions on the query program,
-it might execute arbitrary code.
+coordinator. Other than this, there are no restrictions on the query program,
+it might execute arbitrary code. % TODO maybe rewrite
 
 \begin{lstlisting}[caption={[Example query.]Example query which creates a stream of integers,
 filters out all odd numbers and then prints the rest.}]
@@ -77,6 +89,93 @@ fn main() {
     }).unwrap();
 }
 \end{lstlisting}
+
+Timely implements a data-parallel approach for its computation. This is done by
+instantiating the dataflow graph on multiple worker threads, where each worker
+drives the computation of its local instance, and the data is distributed by
+user-provided sharding functions. Workers can be distributed among multiple
+machines, where the computation consists of multiple operating system processes
+which are communicating with each other over the network. Such an
+operating system process might host multiple worker threads.
+
+\begin{figure}[htb]
+  \centering
+    \includegraphics[width=1\textwidth]{figures/spawn_singleprocess}
+  \caption[Query submission with single process.]{Submission of a query on a single executor.
+  Only once the spawned query announces itself at the coordinator is it considered running.}
+  \label{fig:subsingle}
+\end{figure}
+
+\section{Executors}
+
+The spawning and direct supervision of query processes is not done by the
+coordinator itself, but is offloaded to designated processes called executors.
+This choice allows for more flexibility regarding query execution and the
+management of available resources. Since executors can be dynamically be added
+to the system, and with some limitations also be removed again, they provide
+a way for adding new machines to the cluster running our system. The catalog
+maintains the pool of available executors which are participating in the system.
+
+As a timely program can span over multiple machines, a query might span
+over multiple executors. The placement of a query on the available executors
+is performed by the coordinator, based on the users request.
+We currently implement a naive approach to query placement, where the executors
+are chosen randomly if the user does not manually specify a placement. A more
+sophisticated scheduling, which for example could include load balancing,
+has to be investigated.
+
+Another feature of executors are that they define on how queries and their
+worker threads are supposed to be executed. When a executor joins
+the system by introducing itself to the coordinator, the executor also informs
+the coordinator about the execution format it supports. In the current
+implementation, executors only support the execution of queries in the form of
+native operating system executables.
+
+When spawning such an executable, the newly spawned query process and the
+executor coordinate. The executor supplies the newly created process with the information
+it needs in order to participate in the system. This includes the query's own identifier,
+the address of the coordinator, the addresses of any peer processes belonging to the 
+same query, and the number of worker threads to spawn inside this process.
+
+Executors are also responsible for fetching any query binaries they are supposed
+to spawn. When submitting a new query, the submitter has to provide coordinator
+with the URL of the binary. This URL is forwarded to participating executors,
+which will use it to download the query binary. 
+
+Since executors serve as a provider for computational resources such as machines,
+there is typically a one-to-one mapping between executors and the machines they
+are running on. This however is not a requirement of the system, the deployment of
+executors is left to the user. Similarly, the user is free spawn multiple
+processes belonging to the same query on the same executor if they wish to do so.
+
+Since operating system processes can outlive their parent process, executors can
+be removed from the system while the queries spawned by the executor are still
+running. In this case, the coordinator removes the terminating executor from
+the pool, disallowing any future queries to be hosted on the removed executor.
+
+\paragraph{Future Work}
+
+\TODO{Move this, and probably reformulate as well.}
+Alternative executor implementations could for example host multiple queries
+within the same process, by dynamically loading the query's code into an already
+running process and run it on a preemptive OS thread. This would allow queries
+the interchange of objects without the need for data serialization. Given
+the implementation of Timely's operator scheduling, cooperative scheduling
+of multiple worker threads on a single operating system thread would be
+conceivable.
+
+\section{Coordinator}
+
+The purpose of the coordinator is to manage all components of the system. It
+provides an interface for users to submit new queries and inspect the current
+state of the system. In order to receive commands and report their internal state,
+every executor and query process maintains a network connection to the coordinator.
+
+Bookkeeping of the system is done by the coordinator in the catalog. The
+catalog is a datastructure which contains all information about the available
+executors, the running queries and their workers. 
+
+
 
 \subsection{Submission}
 
@@ -101,59 +200,7 @@ to register themselves at the coordinator before they begin their computation.
 Only then the query is considered active and the submission request
 is reported to be completed.
 
-\begin{figure}[htb]
-  \centering
-    \includegraphics[width=1\textwidth]{figures/spawn_singleprocess}
-  \caption[Query submission with single process.]{Submission of a query on a single executor.
-  Only once the spawned query announces itself at the coordinator is it considered running.}
-  \label{fig:subsingle}
-\end{figure}
 
-\section{Executors}
-
-The actual execution and direct supervision of query processes is not done by the
-coordinator itself, but is offloaded to designated processes called executors.
-This choice allows for more flexibility regarding query execution and the
-management of available resources. Since executors can be dynamically be added
-to the system, and with some limitations also be removed again, they provide
-for instance a way to add new machines to the cluster running our system.
-
-Another feature of executors are that they offer choice on how queries and their
-worker threads are supposed to be executed and scheduled. When a executor joins
-the system by introducing itself to the coordinator, the executor also informs
-the coordinator about the execution format it supports.
-
-In the current implementation, the only supported execution format are native
-operating system executables which are spawned as separate processes. However,
-alternative executor implementations could for example host multiple queries
-within the same process, by dynamically loading the query's code into an already
-running process and run it on a preemptive OS thread. This would allow queries
-the interchange of objects without the need for data serialization. Given
-the implementation of Timely's operator scheduling, cooperative scheduling
-of multiple worker threads on a single operating system thread would be
-conceivable.
-
-It is also the executors task to fetch query binaries before execution. When
-submitting a new query, the submitter provides the coordinator with the URL of
-the binary. This URL is forwarded to selected executors, which will use it to
-download the query binary.
-
-When spawning a new query, the query process and its executor coordinate:
-The executor will supply the newly created process with the information
-it needs in order to participate in the system. This includes
-the address of the coordinator, the address of any peer processes belonging to the 
-same query, the number of worker threads to spawn and the query's own identifier.
-Using this information, the query process will spawn its worker threads on behalf
-of the executor.
-
-A query might span over multiple executors. The placement of a query on the
-available executors is performed by the coordinator, based on the users request.
-We currently implement a naive approach to query placement, where the executors
-are chosen randomly. A more sophisticated scheduling, which for example could
-include load balancing, has to be investigated.
-
-\TODO{Maybe talk about the removal of executors, in the case of OS processes they could
-be removed before their queries terminate.}
 
 \section{Exposing data streams}
 
@@ -210,9 +257,9 @@ actual exchange of data happens directly between queries. When a query subscribe
 to a topic, it receives the address of the topic's publisher from the coordinator
 and directly connects to it.
 
-\subsection{Publisher}
+\subsection{Stream Publisher}
 
-A publisher is a Timely operator which exposes its input edge as a topic. When
+A stream publisher is a Timely operator which exposes its input edge as a topic. When
 creating it, the query author has to assign a name for the topic under which the
 input stream will be published. As with all other Timely operators, the publisher
 operator is instantiated on all worker threads. However, the user can choose
