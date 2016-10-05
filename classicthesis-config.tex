@@ -81,8 +81,12 @@
 \hyphenation{que-ries data-flow time-stamp time-ly}
 
 \newcommand\TODO[1]{%
-\textcolor{Maroon}{\ifthenelse{\equal{#1}{}}{\textbf{TODO.}}{\textbf{TODO:} #1}}%
+\ifthenelse{\equal{#1}{}}%
+{\textcolor{Maroon}{\textbf{TODO.}}}%
+{{\color{Maroon} \bfseries TODO: #1}}%
 }
+
+\usepackage{verbatim}
 
 \usepackage{csquotes}
 \PassOptionsToPackage{%

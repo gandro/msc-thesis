@@ -1,13 +1,38 @@
-\chapter{Background}\label{ch:background}
+\chapter{Timely Dataflow}\label{ch:background}
 
-\section{Timely Dataflow}
-
-Timely Dataflow (\textquote{Timely}) is a Rust library for writing distributed,
+Timely Dataflow \cite{timely} (\textquote{Timely}) is a Rust library for writing distributed,
 cyclic dataflow programs. It is a modular implementation of the timely dataflow
 model introduced by Naiad \cite{naiad}. 
 
-\TODO{}
+\section{Computational Model}
 
-\section{Related Work}
+Timely Dataflow is a framework for writing dataflow programs. Dataflow programs
+are programs where the execution model can represented as a directed graph, with data
+flowing along edges and vertice. Notable features of Naiad and
+Timely Dataflow are: Support for structured loops, stateful vertices and the
+options for vertices to be notified if given input rounds are completed. \cite{naiad}
 
-\TODO{}
+\subsection{Data-parallelism}
+
+\subsection{Synchronization}
+
+
+
+\subsection{Programming Interface}
+
+The Timely Dataflow library provides a domain-specific language for expressing
+dataflow graphs in Rust. Users instantiate operators (vertices) and connect
+them using stream handles (edges). Many operators accept user-provided functions
+
+
+\section{Implementation}
+
+
+
+\subsection{Run-time Graph Representation}
+
+
+
+\subsection{Scheduling}
+
+\subsection{Queues}
