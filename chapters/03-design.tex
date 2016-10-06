@@ -335,7 +335,28 @@ producing queries are allowed to discard data if there are no consumers, and
 where consumers use the streams as inputs for their own computation,
 allowing them to assign their own timestamps to the data stream.
 
-It is the users task to provide a communication channel between capture and 
+It is the user's task to provide a communication channel between capture and 
 replay operators. Common channel include Rust's thread-safe FIFO queues or
 TCP sockets. In general it can be said the capture/replay operators result
 in a more tightly coupled system than publish/subscribe pairs.
+
+
+\subsubsection{Retroactive Tapping of Dataflow Edges}
+\begin{addedbar}
+With the current publish/subscribe mechanisms, query authors are required to
+anticipate which operator outputs are of possible interest for subscribers. If
+a certain output is not explicitly published using the publish operator, there
+is no way for other queries to access it.
+
+ tap into arbitrary operator outputs and publish them as topics
+upon request.
+
+The design choice of topics as streams that can be dynamically added or removed
+from the catalog was made with such a use-case in mind. However, due to the fact
+that timely decouples message delivery from operator scheduling (see
+\fullref{sec:runtime-graph}), workers do not maintain a central registry of which
+queue belongs to which operator. As a consequence, outside access to the output of
+a given operator would only be possible with modifications to Timely, which was
+not in the scope of the remaining time.
+
+\end{addedbar}

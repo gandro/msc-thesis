@@ -52,7 +52,7 @@ machines in a cluster.
 The amount of worker threads is fixed for a given execution of the program, as
 all the workers are fully connected in order to be able to exchange messages.
 
-\subsection{Run-time Graph Representation}
+\subsection{Run-time Graph Representation} \label{sec:runtime-graph}
 
 When the executions on a worker starts, Timely executes user-provided
 description of the dataflow graph to instantiate its operators and allocate
@@ -79,7 +79,7 @@ internal work might be confused with pending notifications/progress}.
 
 As Timely decouples message delivery from progress notification, there is no
 need for a central message channel registry. The allocation of messaging
-queues between operators is done bilaterally by the operator themselves,
+channels between operators is done bilaterally by the operator themselves,
 using specialized endpoint allocators provided by \lstinline{timely_communication}.
 
 Communication between workers running in different

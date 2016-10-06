@@ -198,7 +198,7 @@
 % ********************************************************************
 % Using PDFLaTeX
 % ********************************************************************
-\PassOptionsToPackage{pdftex,hyperfootnotes=false,pdfpagelabels}{hyperref}
+\PassOptionsToPackage{hyperfootnotes=false,pdfpagelabels}{hyperref}
     \usepackage{hyperref}  % backref linktocpage pagebackref
 \pdfcompresslevel=9
 \pdfadjustspacing=1 
@@ -330,6 +330,9 @@
 \newenvironment{addedbar}%
 {\cbcolor{YellowGreen}\begin{changebar}}%
 {\end{changebar}\cbcolor{\cbdefaultcolor}}
+
+% References
+\newcommand*{\fullref}[1]{\hyperref[{#1}]{\ref*{#1} \nameref*{#1}}}
 
 % ********************************************************************
 % For the Declaration of Originality
