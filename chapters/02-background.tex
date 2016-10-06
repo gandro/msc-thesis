@@ -8,13 +8,26 @@ model introduced by Naiad \cite{naiad}.
 
 Timely Dataflow is a framework for writing dataflow programs. Dataflow programs
 are programs where the execution model can represented as a directed graph, with data
-flowing along edges and vertice. Notable features of Naiad and
+flowing along edges and vertices. Notable features of Naiad and
 Timely Dataflow are: Support for structured loops, stateful vertices and the
 options for vertices to be notified if given input rounds are completed. \cite{naiad}
 
-\subsection{Data-parallelism}
+\subsection{Data-Parallelism}
+
+\begin{addedbar}
+Timely employs a data-parallel approach for driving the computation. In the
+conceptual dataflow graph, the user can specify a data partitioning scheme
+on the incident edges of an operator. During execution, the dataflow graph
+is instantiated on possibly many worker threads, where each worker maintains
+a local copy of the dataflow graph. As data is pushed along the edges of the
+conceptual graph, it is sent to the designated worker according to the
+partitioning scheme. To put it another way, the data emitted by the vertex
+instance on one worker might be pushed to the conceptual successor vertex
+hosted on a different worker.
 
 \subsection{Synchronization}
+
+
 
 
 
@@ -23,16 +36,54 @@ options for vertices to be notified if given input rounds are completed. \cite{n
 The Timely Dataflow library provides a domain-specific language for expressing
 dataflow graphs in Rust. Users instantiate operators (vertices) and connect
 them using stream handles (edges). Many operators accept user-provided functions
-
+to implement parts of their logic.
 
 \section{Implementation}
 
+The implementation of Timely Dataflow consists of two separate Rust libraries,
+the \lstinline{timely} crate which implements all functionality related to
+dataflow graph construction and progress tracking, while a second library
+called \lstinline{timely_communication} implements the creation and
+initialization of worker threads and provides primitives for communication
+between workers and operators. 
 
+Worker threads can be distributed over multiple processes running on different
+machines in a cluster. 
+The amount of worker threads is fixed for a given execution of the program, as
+all the workers are fully connected in order to be able to exchange messages.
 
 \subsection{Run-time Graph Representation}
 
+When the executions on a worker starts, Timely executes user-provided
+description of the dataflow graph to instantiate its operators and allocate
+and connect the channels between them. In order for an operator to be
+instantiated, it needs to implement the \lstinline{Operate} interface, which
+is used for progress tracking and operator scheduling.
 
+Most notably, the run-time representation of the graph does not allow for
+introspection of the operator type, the type of data being processed or
+the contents of the queues of a certain operator.
 
-\subsection{Scheduling}
+\subsubsection{Operator Scheduling and Execution}
 
-\subsection{Queues}
+Each Timely worker is responsible for scheduling the operators in its local
+dataflow graph instance. Operator scheduling is cooperative and interleaved 
+with progress tracking: Operators typically perform work when progress tracking
+polls the operator about its internal progress. This generally results in the
+execution of any user-provided logic from the dataflow graph description.
+Operators are always polled in a round-robin fashion, as the worker does
+not know about any of the operators pending internal work. \TODO{pending
+internal work might be confused with pending notifications/progress}.
+
+\subsubsection{Channel Allocation}
+
+As Timely decouples message delivery from progress notification, there is no
+need for a central message channel registry. The allocation of messaging
+queues between operators is done bilaterally by the operator themselves,
+using specialized endpoint allocators provided by \lstinline{timely_communication}.
+
+Communication between workers running in different
+processes communicate over TCP/IP, while processes within the same process
+use thread-safe FIFO queues.
+
+\end{addedbar}

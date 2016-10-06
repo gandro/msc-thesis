@@ -130,7 +130,8 @@
 % ****************************************************************************************************
 \usepackage{tabularx} % better tables
     \setlength{\extrarowheight}{3pt} % increase table row height
-\newcommand{\tableheadline}[1]{\multicolumn{1}{c}{\spacedlowsmallcaps{#1}}}
+%\newcommand{\tableheadline}[1]{\multicolumn{1}{c}{\spacedlowsmallcaps{#1}}}
+\newcommand{\tableheadline}[1]{\multicolumn{1}{l}{\textit{#1}}}
 \newcommand{\myfloatalign}{\centering} % to be used with each float for alignment
 \usepackage{caption}
 % Thanks to cgnieder and Claus Lahiri
@@ -316,6 +317,19 @@
 \coverauthor{\myName}
 \coversupervisedby{Dr.\ Desislava Dimitrova \\ Dr.\ John Liagouris \\ Prof.\ Timothy Roscoe}
 \coverdate{May 2016 -- November 2016}
+
+% ********************************************************************
+% Track changes
+% ********************************************************************
+\usepackage[xcolor]{changebar}
+
+\newcommand{\cbdefaultcolor}{BurntOrange}
+
+\cbcolor{\cbdefaultcolor}
+
+\newenvironment{addedbar}%
+{\cbcolor{YellowGreen}\begin{changebar}}%
+{\end{changebar}\cbcolor{\cbdefaultcolor}}
 
 % ********************************************************************
 % For the Declaration of Originality
