@@ -348,15 +348,16 @@ anticipate which operator outputs are of possible interest for subscribers. If
 a certain output is not explicitly published using the publish operator, there
 is no way for other queries to access it.
 
- tap into arbitrary operator outputs and publish them as topics
-upon request.
+Under the assumption that the structure of the dataflow graph is known, it could
+be useful to be able to tap into arbitrary operator outputs of a given query and
+publish the output stream retroactively as a topic.
 
-The design choice of topics as streams that can be dynamically added or removed
+The design choice of topics that can be dynamically added or removed
 from the catalog was made with such a use-case in mind. However, due to the fact
 that timely decouples message delivery from operator scheduling (see
 \fullref{sec:runtime-graph}), workers do not maintain a central registry of which
 queue belongs to which operator. As a consequence, outside access to the output of
 a given operator would only be possible with modifications to Timely, which was
-not in the scope of the remaining time.
+not in the feasible within the scope of this thesis.
 
 \end{addedbar}
