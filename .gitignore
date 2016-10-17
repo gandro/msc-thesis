@@ -30,3 +30,7 @@ thesis.pdf
 
 ## Visual Paradigm
 *.bak_????
+
+## Changebar
+*.cb
+*.cb2

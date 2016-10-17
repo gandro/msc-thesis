@@ -64,7 +64,7 @@ Timely Dataflow library: The dataflow graph is constructed by connecting
 Timely's operators (vertices) to stream objects (edges).
 
 In order for a Timely Dataflow program to become a runnable query on the system,
-it needs to register its computational logic with with our system library instead of
+it needs to register its computational logic with our system library instead of
 using Timely Dataflow's initialization function. This
 \lstinline{timely_query::execute} function not only performs the initialization
 for the query, it also provides additional functionality to interact with the
@@ -111,7 +111,7 @@ operating system process might host multiple worker threads.
 The spawning and direct supervision of query processes is not done by the
 coordinator itself, but is offloaded to designated processes called executors.
 This choice allows for more flexibility regarding query execution and the
-management of available resources. Since executors can be dynamically be added
+management of available resources. Since executors can be dynamically added
 to the system, and with some limitations also be removed again, they provide
 a way for adding new machines to the cluster running our system. The catalog
 maintains the pool of available executors which are participating in the system.
@@ -125,7 +125,7 @@ sophisticated scheduling, which for example could include load balancing,
 has to be investigated.
 
 Another feature of executors are that they define on how queries and their
-worker threads are supposed to be executed. When a executor joins
+worker threads are supposed to be executed. When an executor joins
 the system by introducing itself to the coordinator, the executor also informs
 the coordinator about the execution format it supports. In the current
 implementation, executors only support the execution of queries in the form of

@@ -1,13 +1,134 @@
 \chapter{Implementation}\label{ch:impl}
 
+In this chapter, we discuss the implementation of the system. In the first part,
+we discuss how the different components interact with each other and what
+implementation features they share. In the second part we discuss the concrete
+implementation of the various components.
 
+\section{Communication}
+
+Our system consists of potentially many distributed processes. These processes
+are running concurrently, are dynamically added and removed from the system
+and are communicating with each other. In order to deal with the inherent
+complexity of such a system, we adopted an actor-model like approach for our
+implementation.
+
+Actors in our system include processes like the coordinator, the executors 
+and the query processes. However, as Timely by itself could be seen as an
+actor system, operators like the publish or subscribe operators are also actors
+directly interacting with our system.
+
+To support this kind of model, our networking layer also works in terms of
+asynchronous messages. In contrast to Timely's own networking layer which also
+provides a similar abstraction, we cannot assume a fixed number of actors.
+In order to establish a connection between two components, one of them has to
+take on the role of the server, while the other one acts as a client. Two
+queues are allocated per connection on each actor: one for incoming messages
+and one for outgoing messages. This enables messages to be sent asynchronously
+in both directions. Network failures are signaled in the queue for incoming
+messages. Currently, Rust's standard library TCP sockets are used as the
+underlying transport mechanism, however the system could easily be extended to
+support alternative transport layers as well.
+
+\subsection{Request \& response messages}
+
+While the abstraction of single messages is sufficient for implementing the
+mostly unidirectional messaging paradigm of the publish-subscribe implementation,
+most other communication in the system follows a request-response pattern. Examples
+for such request-response transactions are the registration of topics sent from
+queries to the coordinator, or spawn requests sent from the coordinator to
+executors. For this reason, we implemented a request-response multiplexer on
+top of the plain message channels. This multiplexer allows both actors to have
+multiple requests in flight while waiting for the corresponding responses,
+which can be delivered out of order.
+
+In order to differentiate between different kind of requests and also ensure a
+well-typed response format, request payloads have to implement the \lstinline{Request}
+trait. The associated name is used for decoding, while the associated \lstinline{Success}
+and \lstinline{Error} types specify what kind of payloads are valid for the response.
+This allows the response for a given request \lstinline{R} to be represented by
+Rust's \lstinline{Result<R::Success, R::Error>} type.
+
+\begin{lstlisting}[caption={[Request trait]In order for a type to be used as a
+request message, it needs to implement the \lstinline{Request} trait. The name allows
+request handlers to differentiate between different types of requests, while the associated
+types forces them to issue well-formed responses.
+The trait bounds are explained in section \ref{sec:serialization}.}]
+pub trait Request: Abomonation + Any + Clone + NonStatic {
+    type Success: Abomonation + Any + Clone + NonStatic;
+    type Error: Abomonation + Any + Clone + NonStatic;
+
+    fn name() -> &'static str;
+}
+\end{lstlisting}
+
+\subsection{Serialization} \label{sec:serialization}
+
+For both, the request/response messages as well as messages in the publish/subscribe
+systems, we need to serialize the payloads in order to send them over the network.
+Timely itself provides a uses a high-performance serialization library called
+Abomonation, implying that all data types sent to a publish operator will be
+serializable this way. This makes Abomonation a natural choice as the serialization
+format for the messages sent from publishers to subscribers. 
+
+However, Abomonation is neither memory- nor type-safe. There are no safeguards
+against deserializing data into an incompatible type, which will result in undefined
+behavior. In Timely, such errors are typically avoided since all worker
+execute the exact same program code and the streams between workers are
+statically typed. In our system however, a publisher might accidentally use
+a different version of a library type than the subscriber. Because of this,
+we use our own lightweight wrapper around Abomonation. In addition to the raw
+serialized bytes, we annotate the buffer with the \lstinline{TypeId} of the
+data type. Rust's \lstinline{TypeId} provides an opaque, globally unique
+identifier for a given Rust type and its representation. Thus, we can check
+if the expected and provided type identifier match before trying to deserialize
+a message.
+
+In order for a type to be serialized by our library, it needs to require the
+following type bounds: \lstinline{Abomonation + Any + Clone + NonStatic}.
+
+The \lstinline{Any} trait is required to retrieve the type's identifier. The
+\lstinline{Clone} trait is used to put deserialized types into the incoming
+messages queue and \lstinline{NonStatic} is an auto-trait used to disallow the
+creation of eternally valid pointers into temporary buffers. We also take type
+alignment rules into consideration when serializing into unaligned buffers. 
+
+\paragraph{Future Considerations}
+
+We also use our safe Abomonation wrapper for serializing and
+deserializing requests and response messages. This currently requires all
+components to be compiled for the same architecture. However, our message buffer
+interface has been implemented in a way that easily allows the use of additional
+serialization formats in the future. Alternative schema-based serialization
+formats could also be useful in the publish/subscribe system, telling subscribers
+how to deserialize the data.
+
+Our message buffer additionally also supports multi-part messages, allowing
+for partial deserialization. This is used for the request/response multiplexer,
+but could also be used in the publish/subscribe system for e.g. optional
+decoding of timestamp data.
+
+% TODO \section{Dealing with asynchronous events}
 
 \section{System Interfaces}
 
+This section briefly presents the interfaces between the different components
+in the system.
+
+\subsection{Coordinator}
+
+The richest interface in our system is implemented by the coordinator, as most
+components interact with it one way or another. 
 
 
-\section{Asynchronous Messaging}
+        
+            
 
-\subsection{Serialization}
+
+\subsection{Catalog}
+
+
+
+
 
 
