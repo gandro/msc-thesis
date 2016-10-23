@@ -1,0 +1,122 @@
+\chapter{Discussion}\label{ch:discussion}
+
+Progress Tracking Model:
+
+    continious operators: flink, google dataflow
+    micro-batches: spark streaming
+    flink: watermarks
+    google dataflow: ? (transactions?)
+    
+
+\section{Related Work}
+
+\subsection{Dataflow and streaming engines}
+
+In contrast to the standalone Timely Dataflow library, many state of the art
+dataflow streaming engines have been designed and engineered from the start
+to run multiple current dataflow computations in a cluster. Thus, in this
+section, we will mainly focus on the execution and management aspect running
+multiple dataflow computations, and not so much on the programming model these
+other systems provide.
+
+\subsubsection{Spark Streaming}
+
+Spark Streaming \cite{sparkstreaming} is a streaming engine based on the Spark
+cluster computation framework. Spark Streaming executes streaming dataflow
+computations by turning them into stateless, fault-tolerant batch computations.
+These batches are submitted as tasks to the underlying Spark engine. \cite{spark} 
+
+In Spark, computational tasks work are modeled as transformations on partitioned
+collections of records called \emph{resilient distribute datasets}. The
+runtime schedules the execution of the transformations on a distributed set of
+worker nodes. By tracking the lineage of transformations, Spark is able to
+recover computations by reissuing lost transformations. Based on the model,
+Spark Streaming models stateful, conceptually continuous dataflow computations
+as small stateless microbatches.
+
+This model of execution is very different from Timely's continuous operator
+model. In Timely, both the operator scheduling and the data of the
+computation are managed directly by the workers themselves, which are hosted
+by long living operating system processes. In Spark however, the data and code
+is managed by the system. Because of this, Spark is not only able provide strong
+fault tolerance by reissuing failed computations, Spark is also able to load
+balance concurrently running streams and mitigate stranglers. While we currently
+do not offer these features, we Timely does achieve much lower latencies than
+Spark Streaming, which is mostly enabled by the fact that every Timely
+worker manages itself independently.
+
+%TODO driver processs
+
+\subsubsection{Heron}
+
+Heron \cite{heron} is the API-compatible successor of the Storm \cite{storm}
+streaming dataflow engine.
+Both Storm and Heron call their dataflow computations \emph{topologies}, which 
+are directed acyclic graphs of spouts (stream sources) and bolts
+(stream transformers). Parallelism is achieved by the user specifying the
+number of instances for each bolt and spout, as well as the partitioning
+strategy between them.
+
+The execution model of Storm is very similar to our approach: A topology
+(roughly corresponding to a query in our system) is executed by multiple
+\emph{worker processes}. These are operating system processes which distributed
+over different machines, thus similar to our query proceses. Every machine hosts
+a \emph{supervisor}, which not only monitors the local worker processes, but also spawns new worker
+processes on behalf of the \emph{Nimbus}, making Storm's supervisors similar to our executors.
+The Nimbus is a central process to which new topologies are submitted, mirroring our coordinator.
+
+Heron mostly differs from Storm in its internal architecture. Most notably, in
+Heron every spout or bolt now runs in its own operating system process. All processes
+belonging to the same topology are grouped together in operating system containers.
+The motivations for this change are reported to be better debug-ability
+and simpler resource management. The authors also state that their topologies
+seldom have more than three stages (i.e. bolts/spouts). We believe that such
+an architecture would not make much sense for Timely, as its operators are typically
+more numerous and more lightweight.
+
+Another major change from Storm's architecture
+is the fact Heron does not have a central coordinating process anymore. Being
+a single point of failure and a bottleneck, the Nimbus was considered to be a
+flawed design. Heron thus replaces the old responsibilities of the Nimbus by
+offloading them into a small set independent processes. This might be something
+to consider for futures extensions to our coordinator.
+
+\subsubsection{Flink}
+
+Flink \cite{flink} is a dataflow streaming engine for directed acyclic dataflow
+graphs with support for higher-level iterations. 
+
+
+\subsection{Dataflow composition}
+
+\subsubsection{Kafka}
+
+Kafka \cite{kafka} is a distributed platform for accumulating and sharing streams. It provides
+a publish/subscribe service for potentially partitioned topics. Producers append
+their data to one or more partition, allowing subscribers to read from it.
+The data within a partition is stored persistently, allowing subscribers to
+read all previously published data sequentially and continue where they left
+of in case of failure. The data within a partition is ordered, however there
+is no defined ordering across multiple partitions of the same topic.
+
+Both Spark Streaming and Flink provide official connectors for Kafka, allowing
+dataflow computations to stream data from or to Kafka topics. Flink supports
+the extraction of timestamps and watermarks from topics, allowing also the
+conversion from Kafka timestamps to Flink timestamps.
+
+Kafka also provides its own streaming engine called Kafka Streams. Programs
+written as Kafka Streams act as transformations on streams.
+
+In some ways, Kafka is very similar to our system as we also expose potentially
+partitioned streams from which consumers, such as dataflow programs, can subscribe
+to. However, since our publishers do not keep much state we do not offer any
+persistence or fault-tolerance.
+
+TODO: Kafka is pull, we are push.
+
+TODO: Flink vs Kafka will store progress tracking
+
+\TODO{By leveraging Timely's progress tracking mechanism, our frontier subscribers are however
+able to define an ordering across different partitions streams.}
+
+\subsubsection{MillWheel}
