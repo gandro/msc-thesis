@@ -165,7 +165,7 @@ to the query are provided here as well.
 The executor has to inform the spawned binary about its assigned query id,
 the address of the coordinator and the address of any peer processes. In the
 current implementation this is simply done using environment variables which
-are put in the query process address space.
+are easily accessed by the spawned query.
 
 % TODO talk about supported url formats
 % TODO talk about stdout forwarding
@@ -228,6 +228,8 @@ impl Coordinator {
 \end{lstlisting}
 
 \paragraph{Publisher}
+
+
 
 One might notice that the \lstinline{publish} function takes a reference to
 a Timely stream as an input. Since these kind of references are only available

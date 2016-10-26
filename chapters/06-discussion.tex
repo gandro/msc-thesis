@@ -1,13 +1,5 @@
 \chapter{Discussion}\label{ch:discussion}
 
-Progress Tracking Model:
-
-    continious operators: flink, google dataflow
-    micro-batches: spark streaming
-    flink: watermarks
-    google dataflow: ? (transactions?)
-    
-
 \section{Related Work}
 
 \subsection{Dataflow and streaming engines}
@@ -19,12 +11,17 @@ section, we will mainly focus on the execution and management aspect running
 multiple dataflow computations, and not so much on the programming model these
 other systems provide.
 
+It should be noted that in contrast to Timely and our system, all of the
+following systems implement some form of fault tolerance. 
+
 \subsubsection{Spark Streaming}
 
 Spark Streaming \cite{sparkstreaming} is a streaming engine based on the Spark
 cluster computation framework. Spark Streaming executes streaming dataflow
 computations by turning them into stateless, fault-tolerant batch computations.
 These batches are submitted as tasks to the underlying Spark engine. \cite{spark} 
+
+\paragraph{Process Model}
 
 In Spark, computational tasks work are modeled as transformations on partitioned
 collections of records called \emph{resilient distribute datasets}. The
@@ -47,7 +44,7 @@ worker manages itself independently.
 
 %TODO driver processs
 
-\subsubsection{Heron}
+\subsubsection{Storm \& Heron}
 
 Heron \cite{heron} is the API-compatible successor of the Storm \cite{storm}
 streaming dataflow engine.
@@ -57,7 +54,9 @@ are directed acyclic graphs of spouts (stream sources) and bolts
 number of instances for each bolt and spout, as well as the partitioning
 strategy between them.
 
-The execution model of Storm is very similar to our approach: A topology
+\paragraph{Process Model}
+
+The process model of Storm is very similar to our approach: A topology
 (roughly corresponding to a query in our system) is executed by multiple
 \emph{worker processes}. These are operating system processes which distributed
 over different machines, thus similar to our query proceses. Every machine hosts
@@ -83,9 +82,29 @@ to consider for futures extensions to our coordinator.
 
 \subsubsection{Flink}
 
-Flink \cite{flink} is a dataflow streaming engine for directed acyclic dataflow
-graphs with support for higher-level iterations. 
+Flink \cite{flink} is a dataflow streaming engine for directed acyclic
+dataflow graphs, however it does have support for iterative dataflows on the
+outermost level. Flink interleaves control events with data records, which
+are used for progress tracking and fault tolerance, which is done through
+snapshots. Progress tracking is implemented with global \emph{low watermarks}, which
+denote the minimum timestamp which can be emitted at the sources of the
+topology, enabling Flink to perform out-of-order processing.
 
+\paragraph{Process Model}
+
+The runtime architecture of Flink also uses a central process called the
+\emph{Job Manager}, which accepts and manages computations submitted by
+the client. The Job Manager takes the user submited code, translates it into
+a dataflow graph, which can also be optimized in some cases.
+The computations themselves are executed inside a worker processes called
+the\emph{Task Managers}. Every task manager provides a predefined number of
+task slots, which corresponds with the number of CPU cores and denotes the
+amount of parallelism the task manager provides. The dataflow computation is
+split up in multiple subtasks (typically corresponding with an operator), which
+are placed in a certain task slot. This means that like Spark, Flink multiplexes
+multiple dataflow computations within the same operating system process.
+However, unlike Spark and similar to our system and Heron, these subtasks might
+be long-lived, as Flink provides a continuous operator model.
 
 \subsection{Dataflow composition}
 
@@ -97,27 +116,39 @@ their data to one or more partition, allowing subscribers to read from it.
 The data within a partition is stored persistently, allowing subscribers to
 read all previously published data sequentially and continue where they left
 of in case of failure. The data within a partition is ordered, however there
-is no defined ordering across multiple partitions of the same topic.
+is no defined ordering across multiple partitions of the same topic. Recent
+versions of Kafka also supports the assignment of event timestamps to messages.
 
 Both Spark Streaming and Flink provide official connectors for Kafka, allowing
 dataflow computations to stream data from or to Kafka topics. Flink supports
-the extraction of timestamps and watermarks from topics, allowing also the
-conversion from Kafka timestamps to Flink timestamps.
+the extraction of timestamps from topics, allowing a partition
+to contain out-of-order data. Similar to our system, Flink also provides a
+mechanism to exact watermarks from Kafka sources, which like our system
+is able to unify the progress tracking information from multiple sources.
 
-Kafka also provides its own streaming engine called Kafka Streams. Programs
-written as Kafka Streams act as transformations on streams.
+In some ways, Kafka is very similar to our publish/subscribe as we also expose
+potentially partitioned streams from which consumers, such as dataflow programs,
+can subscribe to. In contrast to Kafka, we have a strict one-to-one mapping between stream
+partitions and topics. Stream partitions in our system are only grouped together
+by following naming conventions on the topic name. 
+ 
+Another difference between Kafka and our system is that Kafkas subscribers are
+\emph{pulling} data from their source, whereas in our system data is \emph{pushed}
+from the source to the subscribers. The implication of this in our
+system is that the publisher does not know anything about the progress of the
+subscriber, which can lead to back-pressure issues if the subscribers are
+slow.
 
-In some ways, Kafka is very similar to our system as we also expose potentially
-partitioned streams from which consumers, such as dataflow programs, can subscribe
-to. However, since our publishers do not keep much state we do not offer any
-persistence or fault-tolerance.
+\paragraph{Kafka Streams}
+In additions to the above mentioned adapters, Kafka also provides its own
+streaming engine called Kafka Streams. It provides a simple acyclic dataflow
+model which uses Kafka topics and sources and sinks, thus acting as transformers.
+Parallelism is achieved by instantiating the dataflow graph on multiple threads.
+Partitioning of the data happens before it is fed to the individual instances
+of the dataflow graph.
 
-TODO: Kafka is pull, we are push.
-
-TODO: Flink vs Kafka will store progress tracking
-
-\TODO{By leveraging Timely's progress tracking mechanism, our frontier subscribers are however
-able to define an ordering across different partitions streams.}
+Like standalone Timely Dataflow, Kafka Streams is implemented as a library. It
+is left to the user to deploy and launch instances of the streaming computation.
 
 \subsubsection{MillWheel}
 
