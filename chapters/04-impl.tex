@@ -1,11 +1,234 @@
 \chapter{Implementation}\label{ch:impl}
 
-In this chapter, we discuss the implementation of the system. In the first part,
-we discuss how the different components interact with each other and what
-implementation features they share. In the second part we discuss the concrete
-implementation of the various components.
+This chapter consists of two parts. The first part
+briefly discusses the implementation of the different components individually.
+In the second part, we discuss some of the shared implementation features
+of all components.
 
-\section{Communication}
+\section{Coordinator}
+
+The richest interface in our system is implemented by the coordinator, as most
+components interact with it one way or another. The coordinator basically
+consists of three modules: The networking layer, the request handler and
+the catalog.
+
+\subsection{Networking Layer}
+
+Upon initialization, the coordinator opens a TCP server socket and listens
+for incoming connections. It implements a simple request/response protocol, the
+implementation details of which are discussed below in section \ref{sec:reqresp}.
+
+Every accepted connection is assigned a unique handle to the request handler.
+The purpose of this handle is to track the requests a certain connection is
+submitting. If this handle is dropped because the connection was closed, the
+destructor of the handle makes sure to remove any shared state in the request
+handler and the catalog that was bound to this the connection.
+
+\subsection{Request Handler}
+
+The request handler contains the central logic of the coordinator. It mutates
+the state in the catalog, e.g. by adding or removing topics based on publication
+and depublication requests. Not all requests can be handled immediately, a
+submission request for example is only fulfilled once all processes belonging
+to the query have registered themselves at the coordinator. For this reason,
+the request handler also maintains some system state outside of the catalog:
+These include pending submissions, blocking topic lookups or handles to the
+executors in order to issue spawn requests.
+
+Note that the request handler does not block if a request cannot be satisfied
+immediately. Instead, it returns a handle for the supposed result, which will
+be resolved once the necessary events for either completing or canceling the
+request occur. The coordinator maintains a central event loop for this, which
+is described below in section \ref{sec:futures}
+
+\subsection{Catalog}
+
+The purpose of the catalog is to maintain and expose the current state of the
+system. \TODO{under construction}
+
+\section{Executor}
+
+The current implementation of the executor is relatively simple. It is a binary
+that registers itself at the coordinator and then spawns child processes on behalf
+of the coordinator.
+
+In order to add a new host to the cluster, the user has to deploy the executor
+binary on the new host, specify the address of the coordinator and then launch
+the executor binary. The executor registers itself at the coordinator, which
+also assigns a unique identifier to this executor. Once connected to the
+coordinator, the executor listens for incoming spawn requests. If such an
+request arrives, it downloads the binary from the specified URL and launches
+it as an operating system process. Any command line arguments to be passed
+to the query are provided here as well.
+
+The executor has to inform the spawned binary about its assigned query identify,
+the address of the coordinator and the address of any peer processes. In the
+current implementation this is simply done using environment variables, which
+can easily be accessed by the spawned query.
+
+% TODO talk about supported url formats
+% TODO talk about stdout forwarding
+
+\section{Query Library}
+
+We provide a small wrapper library which allows Timely processes to participate
+in our system. A query submitted to the system must eventually call the 
+\lstinline{timely_query::execute} function, a function which mirrors Timely's
+own \lstinline{execute} function. When called, this function parses the
+environment variables mentioned above which are provided by the executor.
+Using this information, the process connects to the coordinator and registers
+itself by providing its identifer and the group of workers it will host. Once
+all worker groups have successfully registered themselves at the coordinator,
+the coordinator replies with a randomized token which is used to identify
+the registered processes belonging to a query. 
+
+The initialization of the Timely worker threads and the allocation of the
+communication channels among then is done using \lstinline{time\-ly_\-com\-mu\-ni\-ca\-tion}
+the same way as it would be done in a standalone Timely program. For this
+reason, our query library needs to translate the information provided by the
+executor into Timely's own format.
+
+Our query library also needs to provide an interface for worker threads to
+publish or subscribe to topics. For this reason, every worker thread gets
+a handle to the outgoing request queue. The queue handle is not directly exposed
+to the user. Instead, access to the publish \& subscribe system is provided
+through a set of remote procedure call stubs which are described in the
+following section.
+
+\subsection{Publishers \& Subscribers}
+
+The query library exposes the publish and subscribe functionality. The following
+API is used for publishing and subscribing to Timely streams.
+
+\begin{lstlisting}[caption={[Publish \& subscribe interface]
+The interface for publishing and subscribing Timely streams.
+}]
+pub struct Coordinator {
+  /* hidden handle to request queue */
+}
+
+impl Coordinator {
+  pub fn publish<S, D>(&self, name: &str, stream: &Stream<S, D>,
+    partition: Partition) -> Result<Stream<S, D>, PublicationError>
+      where D: Data + NonStatic, 
+            S: Scope,
+            S::Timestamp: NonStatic;
+
+  pub fn subscribe<T, D>(&self, name: &str, cap: Capability<T>) 
+    -> Result<TimelySubscription<T, D>, SubscriptionError>
+      where T: Timestamp + NonStatic, 
+            D: Data + NonStatic;
+}
+\end{lstlisting}
+
+The \lstinline{NonStatic} bounds on the data and timestamp
+parameters are required for safe serialization described in \ref{sec:serialization}.
+
+\subsubsection{Publisher}
+
+The \lstinline{publish} function takes a direct reference to a Timely
+\lstinline{Stream<S, D>}. These stream handles, which are only available during
+the dataflow graph construction phase, allow us to instantiate our own publish
+operator on the stream.  The instantiated publish operator will push both, its
+incoming data, as well as its current frontier to any subscribers. 
+
+Once the operator is inserted into the dataflow graph, the \lstinline{publish}
+stub issues a registration request to the coordinator, which will result in the
+creation of a topic for other queries to subscribe to.
+
+The \lstinline{partition} argument on the API specifies whether all streams
+shall be merged into a single topic, of if every worker publishes its own stream.
+In the second case, the identifer of the publishing worker is appended to the
+name of the topic:
+
+
+\begin{lstlisting}[caption={
+Example use of publisher.
+}]
+timely_query::execute(|root, coord| {
+    root.scoped::<u64, _, _>(|scope| {
+        let i = scope.index();
+        let numbers = (i*100..(i+1)*100).to_stream(scope);
+
+        // results in `n` topics:
+        //    "numbers.0", "numbers.1", ..., "numbers.n"
+        coord.publish("numbers", &numbers, Partition::PerWorker)
+             .expect("failed to publish topic");
+
+        // filtering performed by each worker in parallel
+        let primes = numbers.filter(|x| x.is_prime());
+
+        // results in a single merged topic called "primes",
+        // published by worker number 0
+        coord.publish("primes", &primes, Partition::Merge)
+             .expect("failed to publish topic");
+    });
+})
+\end{lstlisting}
+
+\subsubsection{Subscriber}
+
+In contrast to the publisher, the current implementation of the \lstinline{subscribe}
+function does not directly instantiate a Timely operator, but returns a subscription
+handle which is used to read data from the topic.
+
+There are two reasons for this choice: First, Timely requires that an operator
+is instantiated on every worker. It can happen that the amount of topics a query
+would like to subscribe to and the amount of workers do not match. Thus, the API
+quickly becomes complicated, as we would need to provide an interface assigning
+topics to operators.
+Second, Timely's operator contract requires that an operator instance announces
+the internal initial capabilities it holds, and, more importantly, the initial
+capabilities of its peers. To support this would require some synchronization
+between the subscribers, as they have to exchange the initial frontier they
+observe at their topic.
+
+Instead, we decided to base our subscription progress tracking on Timely's new
+capability handles. The recently added \emph{unordered input operator} allows
+a query to feed a computation from data with unordered timestamps. This operator
+exposes a root capability for the earliest possible timestamp, allowing the user
+to derive capabilities for newer timestamps from old ones. The frontier
+is advanced by dropping the capabilities for timestamps for which no more data
+is pending.
+
+Based on the progress tracking information delivered by the publisher, the
+subscription handle will automatically derive new capabilities for incoming
+data and drop old ones if the frontier advances. The user however has to
+provide the initial root capability for the input.
+
+\begin{lstlisting}[caption={[Typical use of the subscription handle]
+Typical use of the subscription handle. This query subscribes to a single topic of
+strings, with \lstinline{u64} being the type of the timestamps.
+}]
+timely_query::execute(|root, coord| {
+
+    let (mut input, cap) = root.scoped::<u64, _, _>(|scope| {
+        let ((input, cap), stream) = scope.new_unordered_input();
+        // stream.operators(...)
+        (input, cap)
+    });
+
+    let topic = coord.subscribe::<_, String>("example", cap)
+                     .expect("failed to subscribe");
+
+    for (time, data) in topic {
+        let session = input.session(time);
+        session.give_content(&mut Content::Typed(data));
+        root.step();
+    }
+})
+\end{lstlisting}
+
+In queries which use multiple workers, the query author can decide which workers
+actually subscribe to topics, as the code outside the graph generation is allowed
+to conditionally decide if it wants to call the subscribe function. Because
+the root capability can be cloned, this interface also allows the user to
+interleave the data from a topic with other data, for example by merging
+multiple topics at the input.
+
+\section{Shared implementation features}
+
+\subsection{Networking}
 
 Our system consists of potentially many distributed processes. These processes
 are running concurrently, are dynamically added and removed from the system
@@ -30,7 +253,7 @@ messages. Currently, Rust's standard library TCP sockets are used as the
 underlying transport mechanism, however the system could easily be extended to
 support alternative transport layers as well.
 
-\subsection{Request \& response messages}
+\subsection{Request \& response messages} \label{sec:reqresp}
 
 While the abstraction of single messages is sufficient for implementing the
 mostly unidirectional messaging paradigm of the publish-subscribe implementation,
@@ -103,12 +326,7 @@ serialization formats in the future. Alternative schema-based serialization
 formats could also be useful in the publish/subscribe system, telling subscribers
 how to deserialize the data.
 
-Our message buffer additionally also supports multi-part messages, allowing
-for partial deserialization. This is used for the request/response multiplexer,
-but could also be used in the publish/subscribe system for e.g. optional
-decoding of timestamp data.
-
-\section{Dealing with asynchronous events}
+\section{Dealing with asynchronous requests} \label{sec:futures}
 
 Our components are dealing with many concurrent events from different sources
 at the same time. When spawning a new query for example, the coordinator not
@@ -127,118 +345,26 @@ external library to deal with this kind of asynchronous task management.
 One possible solution such library we considered is Timely Dataflow itself, which could
 be used to model the coordinator as a dataflow computation.
 While we think that this is certainly possible, we found the fact that Timely
-has a static dataflow graph and requires all data to be serializable too limiting.
-The static dataflow graph would have required us add an additional multiplexing
-layer at the inputs and outputs and because the coordinator deals with non-serializable
-resources such as socket handles, we would still require a solution to deal with
-asynchronous events when dealing with I/O.
+has a static dataflow graph would would have required us add an additional
+multiplexing layer at the inputs and outputs, complicating the code. 
 
-While many libraries in the Rust ecosystem lacked the degree of maturity
-or composability we require, we found that the \emph{futures-rs} integrates
-very well with our approach. \TODO{this is too much noise}
+In addition, Timely currently requires all data to be serializable. Because
+the coordinator deals with non-serializable resources such as socket handles,
+we would still require a solution to deal with asynchronous events when dealing
+with I/O.
 
-\section{Implementation of individual components}
+The current implementation uses the \emph{futures-rs} library for modeling
+asynchronous tasks. It provides abstractions for both asynchronous computations
+that yield a single result, a \lstinline{Future}, and computations that
+continuously produce results which implement the \lstinline{Stream} interface
+(not to be confused with Timey's stream handles). The library provides combinators
+for the user to chain these asynchronous requests together or register actions
+to be taken once the asynchronous request is completed.
 
-\subsection{Coordinator}
+The \emph{futures-rs} library itself however does not provide an event loop
+which reacts on events and resolves pending futures. For this reason, we implemented
+our own event loop.
 
-The richest interface in our system is implemented by the coordinator, as most
-components interact with it one way or another. It accepts incoming network
-connections from the other components and handles their requests according.
-
-
-
-\subsection{Executor}
-
-The current implementation of the executor is relatively simple. It is a binary
-that registers itself at the coordinator and then spawns child processes on behalf
-of the coordinator.
-
-In order to add a new host to the cluster, the user has to deploy the executor
-binary on the new host, specify the address of the coordinator and then launch
-the executor binary. The executor registers itself at the coordinator, which
-also assigns a unique identifier to this executor. Once connected to the
-coordinator, the executor listens for incoming spawn requests. If such an
-request arrives, it downloads the binary from the specified URL and launches
-it as an operating system process. Any command line arguments to be passed
-to the query are provided here as well.
-
-The executor has to inform the spawned binary about its assigned query id,
-the address of the coordinator and the address of any peer processes. In the
-current implementation this is simply done using environment variables which
-are easily accessed by the spawned query.
-
-% TODO talk about supported url formats
-% TODO talk about stdout forwarding
-
-\subsection{Query Library}
-
-We provide a small wrapper library which allows Timely processes to participate
-in our system. A query submitted to the system must eventually call the 
-\lstinline{timely_query::execute} function, a function which mirrors Timely's
-own \lstinline{execute} function. When called, this function parses the
-environment variables mentioned above which are provided by the executor.
-Using this information, the process connects to the coordinator and registers
-itself by providing its query id and the group of workers it will host. Once
-all worker groups have successfully registered themselves at the coordinator,
-the coordinator replies with a randomized token which is used to identify
-the registered processes belonging to a query. 
-
-The initialization of the Timely worker threads and the allocation of the
-communication channels among then is done using \lstinline{timely_communication}
-the same way as it would be done in a standalone Timely program. For this
-reason, our query library needs to translate the information provided by the
-executor into Timely's own format.
-
-Our query library also needs to provide an interface for worker threads to
-publish or subscribe to topics. For this reason, every worker thread gets
-a handle to the outgoing request queue. The queue handle is not directly exposed
-to the user. Instead, access to the publish \& subscribe system is provided
-through a set of remote procedure call stubs which are described below.
-
-\subsubsection{Publishers \& Subscribers}
-
-The query library exposes the publish and subscribe functionality in the
-following API:
-
-\begin{lstlisting}[caption={[Publish \& subscribe interface]
-The interface for publishing and subscribing Timely streams.
-}]
-pub enum Topics {
-    PerWorker,
-    Merge,
-}
-
-pub struct Coordinator {
-  /* hidden handle to request queue */
-}
-
-impl Coordinator {
-  pub fn publish<S, D>(&self, name: &str, stream: &Stream<S, D>,
-    partition: Topics) -> Result<Stream<S, D>, PublicationError>
-      where D: Data + NonStatic, 
-            S: Scope,
-            S::Timestamp: NonStatic;
-
-
-  pub fn subscribe<T, D>(&self, name: &str, root: Capability<T>) 
-    -> Result<TimelySubscription<T, D>, SubscriptionError>
-      where T: Timestamp + NonStatic, 
-            D: Data + NonStatic;
-}
-\end{lstlisting}
-
-\paragraph{Publisher}
-
-
-
-One might notice that the \lstinline{publish} function takes a reference to
-a Timely stream as an input. Since these kind of references are only available
-during the dataflow construction, we can instantiate the publisher before
-any data is produced on that stream. It also allows us to instantiate a Timely
-operator which is necessary to get access the frontier of a stream. The
-\lstinline{partition} argument specifies whether all streams shall be merged
-into a single topic, of if every worker publishes its own stream. In the second
-case, the identifer of the publishing worker is appended to the name of the topic.
-
-The \lstinline{NonStatic} bounds on the data and timestamp parameters are
-required for the safe serialization described in \ref{sec:serialization}.
+A notable difference between \emph{futures-rs} and other future-based libraries
+is that it is polling based, which fits well with Timely's execution strategy
+for operators, which are also polled.
