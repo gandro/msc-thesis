@@ -48,7 +48,7 @@ system. \TODO{under construction}
 
 \section{Executor}
 
-The current implementation of the executor is relatively simple. It is a binary
+The current implementation of the executor is relatively simple. It is an executable
 that registers itself at the coordinator and then spawns child processes on behalf
 of the coordinator.
 
@@ -141,7 +141,6 @@ shall be merged into a single topic, of if every worker publishes its own stream
 In the second case, the identifer of the publishing worker is appended to the
 name of the topic:
 
-
 \begin{lstlisting}[caption={
 Example use of publisher.
 }]
@@ -151,7 +150,7 @@ timely_query::execute(|root, coord| {
         let numbers = (i*100..(i+1)*100).to_stream(scope);
 
         // results in `n` topics:
-        //    "numbers.0", "numbers.1", ..., "numbers.n"
+        //    "numbers.0", "numbers.1", .., "numbers.n"
         coord.publish("numbers", &numbers, Partition::PerWorker)
              .expect("failed to publish topic");
 
@@ -165,6 +164,35 @@ timely_query::execute(|root, coord| {
     });
 })
 \end{lstlisting}
+
+
+\paragraph{Collection Publisher}
+
+In addition to the stream publisher, we also provide the so called collection
+publisher. It has a similar interface for publishing, but it requires the
+type of the incoming stream to deliver \lstinline{(D, i32)} tuples, where
+the integer denotes the amount of elements have been added or removed from
+the collection.
+
+\begin{lstlisting}[caption={[Collection publisher interface]
+}]
+impl Coordinator {
+  pub fn publish_collection<S, D>(&self, name: &str,
+    stream: &Stream<S, (D, i32)>, partition: Partition)
+    -> Result<Stream<S, (D, i32)>, PublicationError>
+      where D: Data + NonStatic, 
+            S: Scope,
+            S::Timestamp: NonStatic;
+}
+\end{lstlisting}
+
+Internally, the publisher maintains a copy of this collection. This is required
+for new subscribers, which must be informed about the contents of the collection
+when they connect. \TODO{this is a lie}
+
+Both publishers share the underlying logic which accepts incoming connections
+from subscribers and notifies the publisher if a subscriber disconnects so
+its queue can be deallocated.
 
 \subsubsection{Subscriber}
 
@@ -204,7 +232,7 @@ timely_query::execute(|root, coord| {
 
     let (mut input, cap) = root.scoped::<u64, _, _>(|scope| {
         let ((input, cap), stream) = scope.new_unordered_input();
-        // stream.operators(...)
+        // stream.operators(..)
         (input, cap)
     });
 
@@ -225,6 +253,8 @@ to conditionally decide if it wants to call the subscribe function. Because
 the root capability can be cloned, this interface also allows the user to
 interleave the data from a topic with other data, for example by merging
 multiple topics at the input.
+
+
 
 \section{Shared implementation features}
 
@@ -287,8 +317,26 @@ pub trait Request: Abomonation + Any + Clone + NonStatic {
 
 \subsection{Serialization} \label{sec:serialization}
 
-For both, the request/response messages as well as messages in the publish/subscribe
-systems, we need to serialize the payloads in order to send them over the network.
+For both, the request/response messages as well as messages used in the publish/subscribe
+subsystem, we need to serialize the payloads in order to send them over the network.
+
+\subsubsection{Message Buffers}
+
+Incoming and outgoing network data is stored in reference counted message buffers.
+This buffer supports multi-part messages, meaning a message contains more than
+one serialized object. This is needed for the request/response multiplexer, which
+needs to partially decode a message in order to determine to which request it
+belongs to. It is also used in the publisher and subscribers, which allows them
+to encode and decode the timestamp and the data separately.
+
+Reference counting is an optimization used by publishers, which allows them to
+serialize the data only once and share the buffer with all subscribers. Every
+outgoing queue to the subscriber only contains a reference to the buffer. Once
+the message is written to the subscriber's socket, the reference count is
+decreased and the message is deallocated once all subscribers have consumed it.
+
+\subsubsection{Safe serialization with Abomonation}
+
 Timely itself provides a uses a high-performance serialization library called
 Abomonation, implying that all data types sent to a publish operator will be
 serializable this way. This makes Abomonation a natural choice as the serialization
@@ -307,7 +355,7 @@ identifier for a given Rust type and its representation. Thus, we can check
 if the expected and provided type identifier match before trying to deserialize
 a message.
 
-In order for a type to be serialized by our library, it needs to require the
+In order for a type to be serialized by our library, it needs to fulfill the
 following type bounds: \lstinline{Abomonation + Any + Clone + NonStatic}.
 
 The \lstinline{Any} trait is required to retrieve the type's identifier. The
@@ -316,15 +364,18 @@ messages queue and \lstinline{NonStatic} is an auto-trait used to disallow the
 creation of eternally valid pointers into temporary buffers. We also take type
 alignment rules into consideration when serializing into unaligned buffers. 
 
-\paragraph{Future Considerations}
+\paragraph{Alternative Serialization Formats}
 
-We also use our safe Abomonation wrapper for serializing and
-deserializing requests and response messages. This currently requires all
-components to be compiled for the same architecture. However, our message buffer
-interface has been implemented in a way that easily allows the use of additional
-serialization formats in the future. Alternative schema-based serialization
-formats could also be useful in the publish/subscribe system, telling subscribers
-how to deserialize the data.
+We currently use our safe Abomonation wrapper not only for data in
+publish/subscribe system, but also for serializing and deserializing requests
+and response messages. This implies that currently all participating components
+have to be compiled for the same processor architecture and operating system.
+
+Because of this, our message buffer interface has been designed to use alternative
+serialization formats in the future. Besides supporting heterogeneous clusters,
+alternative formats might also be useful in the publish/subscribe system:
+Schema-based serialization formats would it allow subscribers to decode published
+data even without static knowledge of its data type.
 
 \section{Dealing with asynchronous requests} \label{sec:futures}
 
@@ -363,7 +414,7 @@ to be taken once the asynchronous request is completed.
 
 The \emph{futures-rs} library itself however does not provide an event loop
 which reacts on events and resolves pending futures. For this reason, we implemented
-our own event loop.
+our own event loop. \TODO{This is crap}
 
 A notable difference between \emph{futures-rs} and other future-based libraries
 is that it is polling based, which fits well with Timely's execution strategy
