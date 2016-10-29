@@ -2,17 +2,19 @@
 
 \section{Related Work}
 
-\subsection{Dataflow and streaming engines}
+\subsection{Dataflow streaming engines}
 
-In contrast to the standalone Timely Dataflow library, many state of the art
+In contrast to the standalone Timely Dataflow library, many state-of-the-art
 dataflow streaming engines have been designed and engineered from the start
-to run multiple current dataflow computations in a cluster. Thus, in this
-section, we will mainly focus on the execution and management aspect running
-multiple dataflow computations, and not so much on the programming model these
-other systems provide.
-
-It should be noted that in contrast to Timely and our system, all of the
-following systems implement some form of fault tolerance. 
+to run multiple current dataflow computations in a cluster. One of the
+goals of this thesis was to provide such functionality for Timely Dataflow
+based programs. Thus, in this section, we will mainly focus on the execution
+and management aspect running multiple dataflow computations. Less focus is
+put on the differences in the programming and synchronization model these 
+other systems provides. Our system currently also does not provide any fault
+tolerance guarantees. This is also a notable difference our system has compared
+to related work, which often put heavy emphasis on providing strong fault
+tolerance.
 
 \subsubsection{Spark Streaming}
 
@@ -119,6 +121,8 @@ of in case of failure. The data within a partition is ordered, however there
 is no defined ordering across multiple partitions of the same topic. Recent
 versions of Kafka also supports the assignment of event timestamps to messages.
 
+\paragraph{Integration with Dataflow Engines}
+
 Both Spark Streaming and Flink provide official connectors for Kafka, allowing
 dataflow computations to stream data from or to Kafka topics. Flink supports
 the extraction of timestamps from topics, allowing a partition
@@ -152,6 +156,30 @@ is left to the user to deploy and launch instances of the streaming computation.
 
 \subsubsection{MillWheel}
 
+MillWheel \cite{millwheel} is a stream processing framework used to implement
+the dataflow model proposed by Google \cite{google}. MillWheel conceptually
+treats the whole system as a single dynamic dataflow graph: The nodes of the
+dataflow graph are user submitted computations (i.e. operators) that are
+invoked by the system on receipt of incoming data. Edges are created by the
+user specifying which streams a computation consumes and produces. Streams
+have uniquely assigned names.
+
+This makes MillWheel essentially a publish/subscribe system. The main difference
+to our system is that the publish/subscribe mechanism in MillWheel is used to
+connect individual operators (i.e. nodes), not whole queries (i.e. graphs).
+Another difference to our approach is the fact that MillWheel lets subscriber
+specify how a stream should be partitioned before it is delivered to the consumer.
+Aggregation and partitioning is done according to keys, i.e. records with the
+same key are always delivered to the same computation instance. Different
+computations can use different keys on the same streams, as every computation
+needs to provide a key extraction function for each of its input streams.
+
+Computations run on one or more processes distributed over a dynamic set of
+machines. The assignment of computations to machines and keys to computations
+is managed by the system it self. Because the system manages persistent state
+on behalf of the computations, computations for a certain key can be moved
+for load-balancing or restarted in the case of failures.
+
 \section{Future Work}
 
 \subsection{Query Resource Management and Supervision}
@@ -159,6 +187,8 @@ is left to the user to deploy and launch instances of the streaming computation.
 \subsection{Topic Buffering and Backpressure}
 
 \subsection{Fault Tolerance}
+
+\subsection{Partitioning by Subscribers}
 
 \subsection{Automatic Query Composition}
 

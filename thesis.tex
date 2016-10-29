@@ -27,7 +27,7 @@
 %
 % **************************************************************************************************************
 \RequirePackage{fix-cm} % fix some latex issues see: http://texdoc.net/texmf-dist/doc/latex/base/fixltx2e.pdf
-\documentclass[ twoside,openright,numbers=noenddot,headinclude,%1headlines,% letterpaper a4paper
+\documentclass[ twoside=semi,titlepage=firstiscover,numbers=noenddot,headinclude,%1headlines,% letterpaper a4paper
                 footinclude=true,cleardoublepage=empty,abstractoff, % <--- obsolete, remove (todo)
                 BCOR=5mm,paper=a4,fontsize=11pt,%11pt,a4paper,%
                 ngerman,american,%
@@ -62,8 +62,8 @@
 %********************************************************************
 % Frontmatter
 %*******************************************************
-% TODO \cleardoublepage\include{frontback/abstract}
-% TODO \cleardoublepage\include{frontback/acknowledgments}
+\cleardoublepage\include{frontback/abstract}
+\cleardoublepage\include{frontback/acknowledgments}
 \pagestyle{scrheadings}
 \cleardoublepage\include{frontback/contents}
 %********************************************************************

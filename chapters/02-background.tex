@@ -5,7 +5,7 @@ cyclic dataflow programs. It is a modular implementation of the \emph{timely dat
 model} introduced by Naiad \cite{naiad}. 
 
 \section{Computational Model}
-\begin{addedbar}
+
 Timely Dataflow is a framework for writing dataflow programs. Dataflow programming
 accommodates an execution model which can be represented as a directed graph:
 Data flows along edges, while the computational logic in vertices transforms it.
@@ -32,7 +32,7 @@ as product types with a defined partial order.
 \subsection{Data-Parallelism}
 
 Timely employs a data-parallel approach for scaling the computation. In the
-conceptual dataflow graph, the user can specify a data partitioning scheme
+conceptual dataflow graph, the user has to specify a data partitioning scheme
 on the incident edges of an operator. During execution, the dataflow graph
 is instantiated on possibly many worker threads, where each worker maintains
 a local copy of the dataflow graph. As data is pushed along the edges of the
@@ -48,25 +48,25 @@ be argue about globally outstanding messages.
 
 \subsection{Progress Tracking}
 
-A key feature of the timely dataflow model is its support for notification
+A key feature of the timely dataflow model is its fine-grained support for notification
 about the advancement of messages in flight, i.e. informing operators about
 timestamps for which no more messages will arrive. The set of still observable
-timestamps at a certain input edge is derived from the \emph{frontier}. Based 
+timestamps at a certain input edge is derived from the \emph{frontier}. Based on
 the partially ordered set of possible timestamps $T$, the frontier (at a given
 input and a certain time) is defined as a subset (more precisely, an antichain)
 $F = \{t_1, t_2, \dots, t_n \in T \}$
-which restricts the set of observable future timestamps
+which restricts the set of observable future timestamps:
 $S_F = \{ t_s \mid \exists t_f \in F: t_s \geq t_f \}$
 
 Operators must ask the system to be notified when the frontier advances. This
-is typically done by asking for notification about the progress of messages wit
+is typically done by asking for notification about the progress of messages with
 a given timestamp $t$. The
 notification is served when there are no more outstanding messages with
 timestamp $t$ or smaller, i.e. there are no more elements in the frontier less
 or equal than $t$.
 
 In order not to break notification semantics, operators are only allowed to
-produce messages with a timestamp greater or equal $t$ if they hold a
+produce messages with a timestamp greater than or equal to $t$ if they hold a
 capapility for timestamp $t$. Operators can obtain capabilities for a certain
 timestamp either during initialization of the system, or if they receive a
 message of the given timestamp.
@@ -77,8 +77,11 @@ The implementation of Timely Dataflow consists of two separate Rust libraries,
 the \lstinline{time\-ly} crate which implements all functionality related to
 dataflow graph construction and progress tracking, while a second library
 called \lstinline{time\-ly_\-com\-mu\-ni\-ca\-tion} implements the creation and
-initialization of worker threads and provides primitives for communication
-between workers and operators. 
+initialization of worker threads and provides primitives for communication.
+These communication primitives come in the form of asynchronous unidirectional
+channels and are used by both workers and operators, though in different ways.
+Workers use these channels for the exchange of progress tracking messages, while
+operators use them to push data along the dataflow edges.
 
 \subsection{Programming Interface}
 
@@ -89,7 +92,7 @@ them to other operators using stream handles (representing edges).
 The Timely library contains implementations for common operators such as
 \lstinline{map} or \lstinline{fil\-ter}, but also for more generic combinators
 such as \lstinline{un\-ary} or \lstinline{bin\-ary} for implementing custom operators.
-Many of the provided operators accept user-provided functions to implement
+Many of the provided operators accept user-defined functions to implement
 parts of their logic.
 
 External input is fed to the dataflow computation using input operators. These
@@ -100,17 +103,23 @@ to connect the stream to their input ports.
 
 \subsection{Run-time Graph Representation} \label{sec:runtime-graph}
 
-When the executions on a worker starts, Timely assembles the run-time
-dataflow graph by executing the user-provided dataflow description. 
+When the execution on a worker starts, Timely assembles the run-time
+dataflow graph from the the user-provided dataflow description. The run-time
+representation consists of a list of operators and a list of edges between them.
+
 When operators are instantiated, they inform the run-time about which
-connections they have to other operators and provide and implementation
+connections they have to other operators and provide an implementation
 of the \lstinline{Operate} interface, which is used by Timely for progress
 tracking and operator scheduling.
 
 By implementing this interface, operators describe their inputs and
-outputs in terms of how much timestamps can advance on the operators internal
-paths and what capabilities they initially hold. Via this interface, operators
-are also informed about the capabilities and paths of the surrounding operators.
+outputs in terms of what capabilities they initially hold and how message
+timestamps can advance when passing through. The second part is needed because
+nested subgraphs are also just represented to their parent as single operators.
+By requesting so called path summary of every child's internal structure, the
+parent has sufficient information to perform progress tracking for its
+children. The operator interface is also used by parents to inform their children
+about the initial capabilities and path summaries of their surroundings.
 
 Once construction is complete, the dataflow graph cannot be changed anymore.
 Timely requires that every worker hosts exactly the same dataflow graph
@@ -122,11 +131,14 @@ consumed and produced on each input or output edge, and also which internal
 capabilities it holds on to. Notification about the frontier at the
 operator's input edge is also delivered over \lstinline{Operate} interface.
 
-A notable feature of the implementation is that the operator run-time interface
-is heavily oriented towards progress tracking. 
-As a consequence, this run-time representation of the operator graph does not
-allow for introspection of the operator type, the type of data being processed
-or the contents of the message queues of a certain operator.
+A noteworthy aspect of the implementation is that the operator run-time interface
+is heavily oriented towards progress tracking, it is completely decoupled
+from message delivery.
+
+As a consequence, this run-time representation of the operator graph does
+currently not allow for introspection of the operators logic, the type of data
+being processed or the contents of the message queues of a certain operator.
+% TODO maybe mention this has an impact on operator schedulign
 
 \subsubsection{Operator Scheduling and Execution}
 
@@ -171,4 +183,3 @@ program, as all the workers are fully connected in order to be able to exchange
 messages. The addresses of any peer processes is provided programmatically
 or alternatively read from a text file.
 
-\end{addedbar}
