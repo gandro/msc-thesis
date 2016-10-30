@@ -1,57 +1,85 @@
 \chapter{Implementation}\label{ch:impl}
 
-This chapter consists of two parts. The first part
-briefly discusses the implementation of the individual components.
-In the second part, we discuss some of the shared implementation features
-of all components.
+The implementation of our system consist of the components described in the
+previous chapter. In this chapter, we discuss the individual implementations,
+but we also present some shared implementation features, such as the common
+request/response protocol used for the communication between the different
+components.
 
 \section{Coordinator}
 
-The richest interface in our system is implemented by the coordinator, as most
-components interact with it one way or another. The coordinator basically
-consists of three parts: The networking layer, the request handler and
-the catalog.
+As the central component of our system, the coordinator performs a rich
+set of tasks. These involve handling submission requests for new queries,
+but also handling publication and subscription requests from existing queries.
+It is the central authority about the current system state, i.e. it maintains
+a list of all running queries and executors, but it also tracks all existing
+publications and subscriptions. It exposes this information in the catalog.
 
-\subsection{Networking Layer}
+Because most components interact or synchronize with the coordinator, its
+internal implementation is not without challenges. The two major ones
+being the fact that it has to deal with many concurrent asynchronous events,
+and secondly that it has to maintain shared mutable state.
 
-Upon initialization, the coordinator opens a TCP server socket and listens
-for incoming connections. It implements a simple request/response protocol, the
-implementation details of which are discussed below in section \ref{sec:reqresp}.
+Before we discuss these challenges, we provide a brief overview over the
+internal architecture of the coordinator: To other components, the coordinator
+exposes a request/response-based interface on a predefined networking port.
+For this purpose, the coordinator listens for incoming connections on that port
+and then waits for the connected clients to send requests. Once requests are
+received and decoded, they are forwarded to a central request handler. This
+request handler contains the central logic of the coordinator, keeps track of
+unfulfilled requests and mutates the catalog to announce changes in the
+system state.
 
-Every accepted connection is assigned a unique handle to the request handler.
-The purpose of this handle is to track the requests a certain connection is
-submitting. If this handle is dropped because the connection was closed, the
-destructor of the handle makes sure to remove any shared state in the request
-handler and the catalog that was bound to this the connection.
+\paragraph{Dealing with asynchronous events}
+The initial prototype of the coordinator used a multi-threaded approach for dealing
+with multiple clients at the same time, and used message passing between threads
+to avoid directly exposing shared state. However, many requests handled by
+the coordinator require it to wait for external events, and thus a form of
+cooperative task management is needed.
 
-\subsection{Request Handler}
+We initially used a continuation-passing style for splitting blocking requests into
+non-blocking subtasks. However, due to Rust's memory ownership model, we found that
+this approach often resulted in manual \emph{stack ripping} \cite{stackmgmt},
+which made code both hard to read and inconvenient to write.
 
-The request handler contains the central logic of the coordinator. It mutates
-the state in the catalog, e.g. by adding or removing topics based on publication
-and depublication requests. 
+This motivated us to re-design the coordinator around a central event loop, which
+allows us to multiplex many asynchronous tasks within the same thread. However,
+instead of using callbacks as event handlers, we decided to adapt an external
+library called \lstinline{future-rs} which provides a more expressive interface
+for dealing with asynchronous tasks based on the concept of \emph{futures}. Futures
+(sometimes called promises, eventuals or deferred objects) are proxy objects for
+values that will eventually will be provided through some asynchronous event.
+The \lstinline{future-rs} library provides combinators for chaining events
+together or waiting on multiple events at the same time. The library itself
+only provides an abstract interface for dealing with futures, the actual
+dispatching of events has to be implemented externally, which we did in the
+aforementioned event loop.
 
-Not all requests can be handled immediately, a submission request for example
-is only fulfilled once all processes belonging to the query have registered
-themselves at the coordinator. 
-For this reason,
-the request handler also maintains some system state outside of the catalog:
-These include pending submissions, blocked topic lookups and references to the
-executors request queues in order to be able to issue spawn requests.
+With this abstraction, requests that might be completed asynchronously
+(i.e. a blocking subscription request for a topic which has not yet been registered)
+are split up into a future representing the pending response, and a completion handle
+which is invoked once the request can be resolved. Bookkeeping of pending requests
+is done in the request handler.
 
+\paragraph{Maintaining shared mutable state}
 
+The nature of the coordinator requires it to mutate its internal state on
+behalf of the connected clients. As the Rust programming language discourages
+the use of aliased directly mutable references, we have to provide a wrapper
+type which allows the connection handlers mutable access to the request handler.
 
-The request handler does not block if a request cannot be satisfied
-immediately. Instead, it returns a so called promise for the supposed result,
-which will be resolved once the necessary events occur which either complete or cancel the
-submitted request. The coordinator maintains a central event loop for this, which
-is described below in section \ref{sec:futures}
+Because all requests originating from a certain connection are issued using a
+wrapper, we can use it to keep track of the requests submitted by that connection.
+This allows us to clean up any associated state if the connection disappears,
+such as removing disconnected executors from the pool, or depublishing 
+topics of crashed workers.
 
 \subsection{Catalog}
 
 The purpose of the catalog is to maintain and expose the current state of the
 system. It tracks the addition or removal of executors, queries, topics,
 publication and subscriptions and exposes them in collection topics according
-to the following schema:
+to the schema shown in Figure~\ref{fig:model}.
 
 \begin{figure}[htb]
   \centering
@@ -157,7 +185,7 @@ creation of a topic for other queries to subscribe to.
 
 The \lstinline{partition} argument on the API specifies whether all streams
 shall be merged into a single topic, of if every worker publishes its own stream.
-In the second case, the identifer of the publishing worker is appended to the
+In the second case, the identifier of the publishing worker is appended to the
 name of the topic:
 
 \begin{lstlisting}[caption={
@@ -207,11 +235,23 @@ impl Coordinator {
 
 Internally, the publisher maintains a copy of this collection. This is required
 for new subscribers, which must be informed about the contents of the collection
-when they connect. \TODO{this is a lie}
+when they connect.
 
-Both publishers share the underlying logic which accepts incoming connections
-from subscribers and notifies the publisher if a subscriber disconnects so
-its queue can be deallocated.
+\paragraph{Implementation Details}
+
+Both publishers share the same underlying logic which accepts incoming connections
+from subscribers and provides a notifications for disconnected clients.
+
+Internally, this logic also make use of the \lstinline{future-rs} library, 
+since futures have also been integrated in our networking layer. A unique
+aspect of the futures provided by \lstinline{future-rs} is that they need
+be polled in order to make progress.
+
+Inside the coordinator the polling is done by its event loop. For the futures
+inside our publish and subscribe operators however we make use of the fact
+that Timely itself also uses polling-based scheduling. This guarantees that
+the surrounding Timely operator is polled regularly, enabling it to poll
+the contained futures for completion.
 
 \subsubsection{Subscriber}
 
@@ -273,8 +313,6 @@ the root capability can be cloned, this interface also allows the user to
 interleave the data from a topic with other data, for example by merging
 multiple topics at the input.
 
-
-
 \section{Shared implementation features}
 
 \subsection{Networking}
@@ -302,14 +340,12 @@ messages. Currently, Rust's standard library TCP sockets are used as the
 underlying transport mechanism, however the system could easily be extended to
 support alternative transport layers as well.
 
-\subsection{Request \& response messages} \label{sec:reqresp}
+\subsection{Request \& Response Messages} \label{sec:reqresp}
 
 While the abstraction of single messages is sufficient for implementing the
 mostly unidirectional messaging paradigm of the publish-subscribe implementation,
-most other communication in the system follows a request-response pattern. Examples
-for such request-response transactions are the registration of topics sent from
-queries to the coordinator, or spawn requests sent from the coordinator to
-executors. For this reason, we implemented a request-response multiplexer on
+most other communication in the system follows a request-response pattern.
+For this reason, we implemented a request-response multiplexer on
 top of the plain message channels. This multiplexer allows both actors to have
 multiple requests in flight while waiting for the corresponding responses,
 which can be delivered out of order.
@@ -354,7 +390,7 @@ outgoing queue to the subscriber only contains a reference to the buffer. Once
 the message is written to the subscriber's socket, the reference count is
 decreased and the message is deallocated once all subscribers have consumed it.
 
-\subsubsection{Safe serialization with Abomonation}
+\subsubsection{Safe Serialization with Abomonation}
 
 Timely itself provides a uses a high-performance serialization library called
 Abomonation, implying that all data types sent to a publish operator will be
@@ -396,6 +432,7 @@ alternative formats might also be useful in the publish/subscribe system:
 Schema-based serialization formats would it allow subscribers to decode published
 data even without static knowledge of its data type.
 
+\begin{comment}
 \section{Dealing with asynchronous requests} \label{sec:futures}
 
 Our components are dealing with many concurrent events from different sources
@@ -438,3 +475,5 @@ our own event loop. \TODO{This is crap}
 A notable difference between \emph{futures-rs} and other future-based libraries
 is that it is polling based, which fits well with Timely's execution strategy
 for operators, which are also polled.
+
+\end{comment}

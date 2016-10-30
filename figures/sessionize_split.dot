@@ -1,0 +1,75 @@
+digraph G {
+//    rankdir="LR";
+    graph [fontname = "source sans pro bold"];
+    node [fontname = "source sans pro light"];
+    edge [fontname = "source sans pro light"];
+
+//    graph [splines=ortho]
+    node [style="rounded", shape=box]
+
+    subgraph cluster_1 {
+        label="Query";
+        graph[style=dotted];
+        input [label="Input", style="rounded,filled"]
+        sessionize [label="Sessionization"]
+        sessionize_topic [label="Topic", style=filled]
+        //sessionize_pub [shape=circle,width=.01,height=.01,label=""]
+    }
+
+    subgraph cluster_2 {
+        label="Query";
+        graph[style=dotted];
+        msgcount [label="Messages per Session"]
+        msgcount_hist [label="Output", style="rounded,filled"]
+    }
+
+    subgraph cluster_3 {
+        label="Query";
+        graph[style=dotted];
+        msgspan [label="Duration of Session"]
+        msgspan_hist [label="Output", style="rounded,filled"]
+    }
+
+    subgraph cluster_4 {
+        label="Query";
+        graph[style=dotted];
+        txns [label="Parse Transaction Trees"]
+        txns_topic [label="Topic", style=filled]
+        //txns_pub [shape=circle,width=.01,height=.01,label=""]
+    }
+    subgraph cluster_5 {
+        label="Query";
+        graph[style=dotted];
+        txdepth [label="Transaction Tree Depth"]
+        txdepth_hist [label="Output", style="rounded,filled"]
+    }
+    subgraph cluster_6 {
+        label="Query";
+        graph[style=dotted];
+        txsigtop10 [label="Top k Transaction Trees Signatures"]
+        txsigtop10_hist [label="Output", style="rounded,filled"]
+    }
+    subgraph cluster_7 {
+        label="Query";
+        graph[style=dotted];
+        servicetop10 [label="Top k Communication Pairs"]
+        servicetop10_hist [label="Output", style="rounded,filled"]
+    }
+    input -> sessionize
+    sessionize -> sessionize_topic
+    //sessionize_topic -> sessionize_pub [arrowhead=none]
+    sessionize_topic -> {msgcount, msgspan, txns, servicetop10} [headport="_"]
+
+    msgcount -> msgcount_hist
+    msgspan -> msgspan_hist
+
+    txns -> txns_topic
+    //txns_topic -> txns_pub [arrowhead=none]
+    txns_topic -> {txdepth, txsigtop10} [headport="_"]
+
+    txdepth -> txdepth_hist
+
+    txsigtop10 -> txsigtop10_hist
+
+    servicetop10 -> servicetop10_hist
+}
