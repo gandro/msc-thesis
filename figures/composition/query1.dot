@@ -1,0 +1,19 @@
+digraph G {
+    rankdir="LR";
+    graph [fontname = "source sans pro bold"];
+    node [fontname = "source sans pro light"];
+    edge [fontname = "source sans pro light"];
+
+    subgraph cluster_1 {
+        label="Query 1";
+        graph[style=dotted];
+
+        rankdir="LR";
+        node [style=rounded, shape=box]
+        "External Input" -> "Parse"
+        "Parse" -> "Filter"
+        "Filter" -> "Group By"
+        "Group By" -> "..."
+        "..." -> "Result"
+    }
+}

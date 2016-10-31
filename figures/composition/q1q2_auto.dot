@@ -1,0 +1,44 @@
+digraph G {
+    rankdir="LR";
+    graph [fontname = "source sans pro bold"];
+    node [fontname = "source sans pro light"];
+    edge [fontname = "source sans pro light"];
+
+    graph [splines=ortho, nodesep=1]
+
+    subgraph cluster_1 {
+        label="Query 1";
+        graph[style=dotted];
+
+        rankdir="LR";
+        node [style=rounded, shape=box]
+        "External Input" -> root1
+        root1 -> parse1
+        parse1 -> filter1
+        filter1 -> derived1
+        derived1 -> "Group By"
+        "Group By" -> some1
+        some1 -> res1
+        
+        root1 [label="Topic 'logs'", style=filled]
+        derived1 [label="<derived topic>", style=filled]
+        parse1 [label="Parse"]
+        filter1 [label="Filter"]
+        some1 [label="..."]
+        res1 [label="Result"]
+    }
+
+    subgraph cluster_2 {
+        label="Query 2";
+        graph[style=dotted];
+
+        rankdir="LR";
+        node [style=rounded, shape=box]
+        derived1 -> "Map"
+        "Map" -> some2
+        some2 -> res2
+
+        some2 [label="..."]
+        res2 [label="Result"]
+    }
+}

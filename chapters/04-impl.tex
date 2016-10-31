@@ -1,21 +1,20 @@
 \chapter{Implementation}\label{ch:impl}
 
-The implementation of our system consist of the components described in the
-previous chapter. In this chapter, we discuss the individual implementations,
-but we also present some shared implementation features, such as the common
-request/response protocol used for the communication between the different
-components.
+In this chapter, we discuss the implementation of the individual components
+presented in the previous chapter, but we also present some shared implementation
+features, such as the common request/response protocol used for the
+communication between the different components.
 
 \section{Coordinator}
 
 As the central component of our system, the coordinator performs a rich
-set of tasks. These involve handling submission requests for new queries,
+set of tasks. These involve handling submission requests to spawn new queries,
 but also handling publication and subscription requests from existing queries.
 It is the central authority about the current system state, i.e. it maintains
 a list of all running queries and executors, but it also tracks all existing
 publications and subscriptions. It exposes this information in the catalog.
 
-Because most components interact or synchronize with the coordinator, its
+Because most components interact with the coordinator, its
 internal implementation is not without challenges. The two major ones
 being the fact that it has to deal with many concurrent asynchronous events,
 and secondly that it has to maintain shared mutable state.
@@ -45,7 +44,7 @@ which made code both hard to read and inconvenient to write.
 This motivated us to re-design the coordinator around a central event loop, which
 allows us to multiplex many asynchronous tasks within the same thread. However,
 instead of using callbacks as event handlers, we decided to adapt an external
-library called \lstinline{future-rs} which provides a more expressive interface
+library called \lstinline{future-rs} \cite{futuresrs}. It provides a more expressive interface
 for dealing with asynchronous tasks based on the concept of \emph{futures}. Futures
 (sometimes called promises, eventuals or deferred objects) are proxy objects for
 values that will eventually will be provided through some asynchronous event.
@@ -102,9 +101,9 @@ of the coordinator.
 In order to add a new host to the cluster, the user has to deploy the executor
 binary on the new host, specify the address of the coordinator and then launch
 the executor binary. The executor registers itself at the coordinator, which
-also assigns a unique identifier to this executor. Once connected to the
+assigns a unique identifier to the connecting executor. Once connected to the
 coordinator, the executor listens for incoming spawn requests. If such an
-request arrives, it downloads the binary from the specified URL and launches
+request arrives, it fetches the binary from the specified source and launches
 it as an operating system process. Any command line arguments to be passed
 to the query are provided here as well.
 
@@ -137,10 +136,9 @@ executor into Timely's own format.
 
 Our query library also needs to provide an interface for worker threads to
 publish or subscribe to topics. For this reason, every worker thread gets
-a handle to the outgoing request queue. The queue handle is not directly exposed
-to the user. Instead, access to the publish \& subscribe system is provided
-through a set of remote procedure call stubs which are described in the
-following section.
+a handle for the connection to the coordinator. Access to the
+publish \& subscribe system is provided through a set of remote
+procedure call stubs which are described in the following section.
 
 \subsection{Publishers \& Subscribers}
 
@@ -313,9 +311,13 @@ the root capability can be cloned, this interface also allows the user to
 interleave the data from a topic with other data, for example by merging
 multiple topics at the input.
 
-\section{Shared implementation features}
+\section{Shared Communications Layer}
 
-\subsection{Networking}
+For the remainder of this chapter we discuss the networking and communications
+layer of our system, which is used all components for implementing their
+services.
+
+\subsection{Messaging}
 
 Our system consists of potentially many distributed processes. These processes
 are running concurrently, are dynamically added and removed from the system

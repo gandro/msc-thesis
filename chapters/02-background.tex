@@ -134,7 +134,6 @@ operator's input edge is also delivered over \lstinline{Operate} interface.
 A noteworthy aspect of the implementation is that the operator run-time interface
 is heavily oriented towards progress tracking, it is completely decoupled
 from message delivery.
-
 As a consequence, this run-time representation of the operator graph does
 currently not allow for introspection of the operators logic, the type of data
 being processed or the contents of the message queues of a certain operator.

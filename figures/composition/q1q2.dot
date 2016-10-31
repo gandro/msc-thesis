@@ -1,0 +1,44 @@
+digraph G {
+    rankdir="LR";
+    graph [fontname = "source sans pro bold"];
+    node [fontname = "source sans pro light"];
+    edge [fontname = "source sans pro light"];
+
+    graph [splines=ortho, nodesep=1]
+
+    subgraph cluster_3 {
+        graph[style=invis];
+    
+        "Topic" [style=filled, shape=box]
+    }
+
+    subgraph cluster_1 {
+        label="Query 1";
+        graph[style=dotted];
+
+        rankdir="LR";
+        node [style=rounded, shape=box]
+        "External Input" -> "Parse"
+        "Parse" -> "Filter"
+        "Filter" -> "Topic"
+        "Filter" -> "Group By"
+        "Group By" -> some1
+        some1 -> res1
+        
+        some1 [label="..."]
+        res1 [label="Result"]
+    }
+
+    subgraph cluster_2 {
+        label="Query 2";
+        graph[style=dotted];
+
+        node [style=rounded, shape=box]
+        "Topic" -> "Map"
+        "Map" -> some2
+        some2 -> res2
+        
+        some2 [label="..."]
+        res2 [label="Result"]
+    }
+}
