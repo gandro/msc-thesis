@@ -69,7 +69,7 @@ The Nimbus is a central process to which new topologies are submitted, mirroring
 Heron mostly differs from Storm in its internal architecture. Most notably, in
 Heron every spout or bolt now runs in its own operating system process. All processes
 belonging to the same topology are grouped together in operating system containers.
-The motivations for this change are reported to be better debug-ability
+The motivation for this change are reported to be better debug-ability
 and simpler resource management. The authors also state that their topologies
 seldom have more than three stages (i.e. bolts/spouts). We believe that such
 an architecture would not make much sense for Timely, as its operators are typically
@@ -96,17 +96,27 @@ topology, enabling Flink to perform out-of-order processing.
 
 The runtime architecture of Flink also uses a central process called the
 \emph{Job Manager}, which accepts and manages computations submitted by
-the client. The Job Manager takes the user submited code, translates it into
-a dataflow graph, which can also be optimized in some cases.
-The computations themselves are executed inside a worker processes called
-the\emph{Task Managers}. Every task manager provides a predefined number of
-task slots, which corresponds with the number of CPU cores and denotes the
-amount of parallelism the task manager provides. The dataflow computation is
-split up in multiple subtasks (typically corresponding with an operator), which
-are placed in a certain task slot. This means that like Spark, Flink multiplexes
-multiple dataflow computations within the same operating system process.
-However, unlike Spark and similar to our system and Heron, these subtasks might
-be long-lived, as Flink provides a continuous operator model.
+the client. The Job Manager takes the user submitted code, translates it into
+an execution plan and potentially optimizes it.
+
+The computations themselves are executed inside worker processes called
+the\emph{Task Managers}. Task managers provide a similar function like our executors, in that
+they are processes distributed over potentially multiple machines and provide access to
+computational resources. They can be dynamically added and announce them selves at the
+job manager. However, in contrast to our executors, task managers directly execute the
+operators and implements the exchange data between them. In our system, this task is done by the
+query library and the Timely runtime. For resource management purposes, each task manager provides
+a predefined number of task slots. These typically correspond with the number of CPU cores,
+though a single slot might host multiple threads. The available memory is also distributed
+equally between the task slots of an task manager. The submitted dataflow computation is split up
+in multiple subtasks (typically corresponding to an operator), and each subtask is assigned
+to a task slot. Subtasksfrom the same job (i.e. submission) can share a task slot
+if the operator supports it, which is useful for example for pipelined operators which don't
+require any exchange of data with operators running in other task slots.
+Because task managers can have multiple task slots, they can run operators from different
+computations within the same operating system process, similar to Spark Streaming. Unlike
+Spark Streaming, but like Heron and our system, these operators are however long-lived
+and do not migrate to other task slots, as Flink also implements a continuous operator model.
 
 \subsection{Dataflow composition}
 
@@ -164,9 +174,13 @@ invoked by the system on receipt of incoming data. Edges are created by the
 user specifying which streams a computation consumes and produces. Streams
 have uniquely assigned names.
 
-This makes MillWheel essentially a publish/subscribe system. The main difference
-to our system is that the publish/subscribe mechanism in MillWheel is used to
-connect individual operators (i.e. nodes), not whole queries (i.e. graphs).
+This makes MillWheel essentially a publish/subscribe system, every individual
+operator acts as a subscriber and a publisher. This is slightly different from
+our system and other combinations of dataflow systems that use an external
+publish/subscribe mechanism: Streams between operators are anonymous until
+explicitly published, while in MillWheel all streams used to connect operators
+are automatically available by for subscription by third parties.
+
 Another difference to our approach is the fact that MillWheel lets subscriber
 specify how a stream should be partitioned before it is delivered to the consumer.
 Aggregation and partitioning is done according to keys, i.e. records with the
@@ -180,6 +194,17 @@ is managed by the system it self. Because the system manages persistent state
 on behalf of the computations, computations for a certain key can be moved
 for load-balancing or restarted in the case of failures.
 
+\begin{table}
+    \myfloatalign
+  \begin{tabularx}{\textwidth}{llllll} \toprule
+    \tableheadline{Our System} & \tableheadline{Spark Streaming} & \tableheadline{Storm} & \tableheadline{Heron} & \tableheadline{Flink} & \tableheadline{MillWheel}\\ \midrule
+
+    \bottomrule
+  \end{tabularx}
+  \caption{Summarized comparison of related work}  \label{tab:related-work}
+\end{table}
+
+\cleardoublepage
 \chapter{Future Work \& Conclusions} \label{ch:conclusions}
 
 \section{Future Work}
@@ -266,7 +291,7 @@ existing queries. An example of this is shown in Figure~\ref{fig:queryoptimizati
   \vspace{-1.2em}
   \includegraphics[scale=0.36]{figures/composition/q1q2_auto}
   \caption{Query optimization based on topic derivation. For identical
-  operations on the same topic, the system could optimize the second
+  operations on the same topic, the system would optimize the second
   query to avoid duplicated work.}
   \label{fig:queryoptimization}
 \end{figure}
@@ -290,8 +315,43 @@ by the running queries.
 
 \subsection{Buffering and Backpressure}
 
-\subsection{Fault Tolerance}
+If subscribers are connected, the publisher will buffer outgoing data for them
+until the subscribers consume it or disconnect. This however can become an issue
+if a single subscribers are slower than the publisher, as its queue grows and
+memory consumption increases.
+
+Our system allows that two queries subscribe from each other. Tightly coupled
+queries thus can mitigate this problem by having the producer subscribe to
+a \textquote{progress topic} published by the consumer. Future work could
+explore more explicit mechanisms for notifying the publisher that it has to
+slow down.
+
+Another approach to deal with slow subscribers could be the introduction of
+intermediate buffers close to the subscriber, a task typically done by the
+message broker in other publish/subscribe systems. These buffers could
+implement their own strategy how they want do deal with slow subscribers,
+such as spilling to disk, or trying to restart slow subscribers with more
+workers.
+
+Intermediate buffers could be used to reduce network traffic, by having
+multiple subscribers read their data from the local buffer instead the remote
+publisher.
+
+\subsection{Persistence and Fault Tolerance}
+
+Timely Dataflow currently does not provide any means of fault tolerance. While
+Naiad \cite{naiad} provided fault tolerance on the operator level, future work
+could explore an implementation on the query level.
 
 \subsection{Partitioning by Subscribers}
+
+
+
+\subsection{Dynamic Code Loading}
+
+
+
+\lstinline{time\-ly_\-com\-mu\-ni\-ca\-tion}
+
 \clearpage
 \section{Conclusions}
