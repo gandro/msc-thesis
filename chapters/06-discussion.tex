@@ -11,7 +11,7 @@ goals of this thesis was to provide such functionality for Timely Dataflow
 based programs. Thus, in this section, we will mainly focus on the execution
 and management aspect running multiple dataflow computations. Less focus is
 put on the differences in the programming and synchronization model these 
-other systems provides. Our system currently also does not provide any fault
+other systems provide. Our system currently also does not provide any fault
 tolerance guarantees. This is also a notable difference our system has compared
 to related work, which often put heavy emphasis on providing strong fault
 tolerance.
@@ -25,7 +25,7 @@ These batches are submitted as tasks to the underlying Spark engine. \cite{spark
 
 \paragraph{Process Model}
 
-In Spark, computational tasks work are modeled as transformations on partitioned
+In Spark, computational tasks work is modeled as transformations on partitioned
 collections of records called \emph{resilient distribute datasets}. The
 runtime schedules the execution of the transformations on a distributed set of
 worker nodes. By tracking the lineage of transformations, Spark is able to
@@ -40,7 +40,7 @@ by long living operating system processes. In Spark however, the data and code
 is managed by the system. Because of this, Spark is not only able provide strong
 fault tolerance by reissuing failed computations, Spark is also able to load
 balance concurrently running streams and mitigate stranglers. While we currently
-do not offer these features, we Timely does achieve much lower latencies than
+do not offer these features, Timely does achieve much lower latencies than
 Spark Streaming, which is mostly enabled by the fact that every Timely
 worker manages itself independently.
 
@@ -79,7 +79,7 @@ Another major change from Storm's architecture
 is the fact Heron does not have a central coordinating process anymore. Being
 a single point of failure and a bottleneck, the Nimbus was considered to be a
 flawed design. Heron thus replaces the old responsibilities of the Nimbus by
-offloading them into a small set independent processes. This might be something
+offloading them into a small set of independent processes. This might be something
 to consider for futures extensions to our coordinator.
 
 \subsubsection{Flink}
@@ -100,7 +100,7 @@ the client. The Job Manager takes the user submitted code, translates it into
 an execution plan and potentially optimizes it.
 
 The computations themselves are executed inside worker processes called
-the\emph{Task Managers}. Task managers provide a similar function like our executors, in that
+\emph{Task Managers}. Task managers provide a similar function like our executors, in that
 they are processes distributed over potentially multiple machines and provide access to
 computational resources. They can be dynamically added and announce them selves at the
 job manager. However, in contrast to our executors, task managers directly execute the
@@ -146,7 +146,7 @@ can subscribe to. In contrast to Kafka, we have a strict one-to-one mapping betw
 partitions and topics. Stream partitions in our system are only grouped together
 by following naming conventions on the topic name. 
  
-Another difference between Kafka and our system is that Kafkas subscribers are
+Another difference between Kafka and our system is that Kafka's subscribers are
 \emph{pulling} data from their source, whereas in our system data is \emph{pushed}
 from the source to the subscribers. The implication of this in our
 system is that the publisher does not know anything about the progress of the
@@ -194,15 +194,17 @@ is managed by the system it self. Because the system manages persistent state
 on behalf of the computations, computations for a certain key can be moved
 for load-balancing or restarted in the case of failures.
 
+\begin{comment}
 \begin{table}
     \myfloatalign
   \begin{tabularx}{\textwidth}{llllll} \toprule
-    \tableheadline{Our System} & \tableheadline{Spark Streaming} & \tableheadline{Storm} & \tableheadline{Heron} & \tableheadline{Flink} & \tableheadline{MillWheel}\\ \midrule
+    \tableheadline{Feature} & \tableheadline{Our System} & \tableheadline{Spark Streaming} & \tableheadline{Storm} & \tableheadline{Heron} & \tableheadline{Flink} & \tableheadline{MillWheel}\\ \midrule
 
     \bottomrule
   \end{tabularx}
   \caption{Summarized comparison of related work}  \label{tab:related-work}
 \end{table}
+\end{comment}
 
 \cleardoublepage
 \chapter{Future Work \& Conclusions} \label{ch:conclusions}
@@ -238,38 +240,47 @@ a certain output is not explicitly published using a publish operator, there
 is no way for other queries to access it. We believe that some mechanism for
 retroactively exposing dataflow edges in a running query would be useful not
 only for diagnostics and manual query composition, but potentially also
-for query optimization. We considered implementing such a feature as part
+for query optimization. 
+
+We considered implementing such a feature as part
 of this thesis. The design choice of topics that can be dynamically added
 or removed from the catalog was also made with such a use-case in mind.
 However, due to time constraints, we were not able to pursue an implementation.
 In the remainder of this section, we however do present some of our
 preliminary ideas.
 
-% TODO: pivot tracing paper, p2 paper
+\paragraph{Exposing Stream Handles}
 
-\subsubsection{Exposing Timely's Stream Handles}
-
-We believe that it would be straightforward to instrument Timely's in a way
-that exposes it's dataflow edges without much run-time overhead: Timely's
-\lstinline{Stream<S, D>} handle internally already maintains an internal
+We believe that it would be relatively easy to instrument Timely's in a way
+that exposes it's data streams without much run-time overhead: Timely's
+\lstinline{Stream<S, D>} handle internally maintains an internal
 registrar which is used by successor nodes to register themselves as consumers.
 When pushing data into the conceptual stream, the producer pushes the data to
 all queues that have been registered on that stream. By collecting and exposing
 the registrars of all edges, it would easily be possible to add new consumers
-at run-time.
-
-Even without much precise knowledge of dataflow graph, we believe
-such a functionality could be useful for diagnostic purposes. With knowledge
-of the semantics of the producing operators, such a mechanism could be used
-to retroactively publish dataflow edges in topics, allowing interested queries
-to subscribe to it.
-
-An unresolved issue with this approach however is that this would only allow
+at run-time. An unresolved issue with this approach however is that this would only allow
 the inspection of the \textquote{data plane} of a Timely computation. Because
 progress tracking information is delivered separately, a way has to be found to
 expose this information as well.
 
-\subsubsection{Query optimization through derived topics}
+\paragraph{Processing intercepted streams}
+
+Previous work on monitoring distributed systems such as P2 \cite{p2} and
+Pivot Tracing \cite{pivot} has demonstrated powerful interfaces for
+processing and querying intercepted streams of running systems.
+We believe that a functionality to tap into dataflow edges of running queries would
+enable similar possibilities in our system: By retroactively publishing
+dataflow edges as topics, other queries could be used to monitor, diagnose or
+extend a running dataflow computation.
+
+Furthermore, the overhead of serializing intercepted tuples could be avoided
+by extending the system to dynamically load code into running queries. Systems
+such as Pivot Tracing and Spark are using Java's ability to dynamically load
+bytecode into the running programs. For our Rust-based system we envision a
+mechanism where queries are loaded as dynamic shared objects into running
+computations.
+
+\paragraph{Query optimization through derived topics}
 
 A detailed representation of a query's dataflow graph, together with the ability
 to tap into dataflow edges could also be used for query optimization. An example
@@ -295,6 +306,9 @@ existing queries. An example of this is shown in Figure~\ref{fig:queryoptimizati
   query to avoid duplicated work.}
   \label{fig:queryoptimization}
 \end{figure}
+
+
+
 
 \subsection{Resource Management}
 
@@ -334,24 +348,25 @@ such as spilling to disk, or trying to restart slow subscribers with more
 workers.
 
 Intermediate buffers could be used to reduce network traffic, by having
-multiple subscribers read their data from the local buffer instead the remote
-publisher.
+multiple subscribers read their data from the local buffer instead remote
+publishers.
+
+
 
 \subsection{Persistence and Fault Tolerance}
 
-Timely Dataflow currently does not provide any means of fault tolerance. While
+\TODO{Timely Dataflow currently does not provide any means of fault tolerance. While
 Naiad \cite{naiad} provided fault tolerance on the operator level, future work
-could explore an implementation on the query level.
+could explore an implementation on the query level.}
 
-\subsection{Partitioning by Subscribers}
+\subsection{Partitioning and Filtering by Subscribers}
 
+\TODO{In our current system, the partitioning scheme of published topics is
+determined by the publishers. Kafka Streams and MillWheel both allow subscribers 
+to provide partitioning functions which are used to decide how data is routed
+from the publisher partitions to the subscriber instances.
 
-
-\subsection{Dynamic Code Loading}
-
-
-
-\lstinline{time\-ly_\-com\-mu\-ni\-ca\-tion}
+This is also somewhat similar to content-based subscription.}
 
 \clearpage
 \section{Conclusions}

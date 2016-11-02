@@ -19,7 +19,7 @@ internal implementation is not without challenges. The two major ones
 being the fact that it has to deal with many concurrent asynchronous events,
 and secondly that it has to maintain shared mutable state.
 
-Before we discuss these challenges, we provide a brief overview over the
+Before we discuss these challenges, we provide a brief overview of the
 internal architecture of the coordinator: To other components, the coordinator
 exposes a request/response-based interface on a predefined networking port.
 For this purpose, the coordinator listens for incoming connections on that port
@@ -29,7 +29,7 @@ request handler contains the central logic of the coordinator, keeps track of
 unfulfilled requests and mutates the catalog to announce changes in the
 system state.
 
-\paragraph{Dealing with asynchronous events}
+\subsection{Dealing with asynchronous events}
 The initial prototype of the coordinator used a multi-threaded approach for dealing
 with multiple clients at the same time, and used message passing between threads
 to avoid directly exposing shared state. However, many requests handled by
@@ -43,24 +43,90 @@ which made code both hard to read and inconvenient to write.
 
 This motivated us to re-design the coordinator around a central event loop, which
 allows us to multiplex many asynchronous tasks within the same thread. However,
-instead of using callbacks as event handlers, we decided to adapt an external
+instead of using raw callbacks as event handlers, we decided to adapt an external
 library called \lstinline{future-rs} \cite{futuresrs}. It provides a more expressive interface
 for dealing with asynchronous tasks based on the concept of \emph{futures}. Futures
 (sometimes called promises, eventuals or deferred objects) are proxy objects for
-values that will eventually will be provided through some asynchronous event.
+values that will eventually be provided through some asynchronous event.
 The \lstinline{future-rs} library provides combinators for chaining events
-together or waiting on multiple events at the same time. The library itself
-only provides an abstract interface for dealing with futures, the actual
-dispatching of events has to be implemented externally, which we did in the
-aforementioned event loop.
+together or waiting on multiple events at the same time. Actions on completed
+futures are expressed as closures. This means that stack ripping occasionally still
+occurs, however the fact that the completion handlers are chained together
+allows for a more sequentially looking code.
+
+A unique aspect of the implementation of \lstinline{future-rs} is that futures
+need be polled in order to make progress. When a future is polled, it checks
+if any pending events have occurred and if so, dispatch any pending completion
+handlers. It is the users responsibility to ensure that futures are being
+polled. This is typically done by registering the future in an event loop.
+
+\subsubsection{Event Loop}
+The \lstinline{future-rs} library itself provides a set of primitives to
+create and combine futures, it also provides abstractions for expressing which
+events a future is waiting for, and expressing the occurrence of events, it
+does however not provide an implementation of an event loop. Our implementation
+of the coordinator thus provides a simple event loop whose sole task it is
+to wait for events to occur and poll registered futures accordingly.
+
+To avoid having to pass around a handle to the event loop, it stores its 
+list of waiting futures in thread local storage. The public interface consists 
+of two free-standing functions, \lstinline{async::spawn} for registering
+new futures to the event loop, and \lstinline{async::finish} for initializing
+the event loop and waiting for its termination. \lstinline{async::finish} accepts
+also initial the initial future which is used to register further futures in
+the event loop. The motivation for this interface, which arguably looks
+a bit uncommon for an event loop, stems from the fact that we model each
+concurrently running task as a chain of futures, basically treating them as
+coroutines.  
+
+Listing~\ref{lst:coorddispatch} shows an example of this. Our networking layer
+models the server socket as a future which yields a stream of incoming connections.
+Each connection itself then maintains a queue for incoming requests, which is
+also modeled as a future, allowing the user to specify actions to be taken
+once a request is received.
+
+\begin{lstlisting}[caption={[Connection handling at the coordinator]%
+Accepting and dispatching incoming connections. The actions specified
+in \lstinline{for_each} and \lstinline{map_err} are invoked by the
+event loop if the corresponding events (such as new incoming connections,
+new incoming requests or errors during request handling) occur.},label={lst:coorddispatch}]
+// `listener` is future yielding a stream of accepted connections
+let listener = network.listen(9189);
+// define the action to be executed for each incoming connection
+let server = listener.for_each(|connection| {
+    // queue pair for outgoing/incoming requests
+    let (tx, rx) = connection;
+   
+    // this action is invoked for each incoming request
+    let client = rx.for_each(move |request| {
+        // decode and dispatch request 
+        ...
+    }).map_err(|err| {
+        // futures can also yield error values
+        // which are handeled separately
+        error!("failed to dispatch request: {:?}", err)
+    });
+
+    // register client handlers in event loop
+    Ok(async::spawn(client));
+});
+
+// drive the event loop to completion
+async::finish(server);
+\end{lstlisting}
+
+
+
 
 With this abstraction, requests that might be completed asynchronously
-(i.e. a blocking subscription request for a topic which has not yet been registered)
+%(i.e. a blocking subscription request for a topic which has not yet been registered)
 are split up into a future representing the pending response, and a completion handle
 which is invoked once the request can be resolved. Bookkeeping of pending requests
 is done in the request handler.
 
-\paragraph{Maintaining shared mutable state}
+
+
+\subsection{Maintaining shared mutable state}
 
 The nature of the coordinator requires it to mutate its internal state on
 behalf of the connected clients. As the Rust programming language discourages
@@ -102,7 +168,7 @@ In order to add a new host to the cluster, the user has to deploy the executor
 binary on the new host, specify the address of the coordinator and then launch
 the executor binary. The executor registers itself at the coordinator, which
 assigns a unique identifier to the connecting executor. Once connected to the
-coordinator, the executor listens for incoming spawn requests. If such an
+coordinator, the executor listens for incoming spawn requests. If such a
 request arrives, it fetches the binary from the specified source and launches
 it as an operating system process. Any command line arguments to be passed
 to the query are provided here as well.
@@ -129,7 +195,7 @@ the coordinator replies with a randomized token which is used to identify
 the registered processes belonging to a query. 
 
 The initialization of the Timely worker threads and the allocation of the
-communication channels among then is done using \lstinline{time\-ly_\-com\-mu\-ni\-ca\-tion}
+communication channels among them is done using \lstinline{time\-ly_\-com\-mu\-ni\-ca\-tion}
 the same way as it would be done in a standalone Timely program. For this
 reason, our query library needs to translate the information provided by the
 executor into Timely's own format.
@@ -235,10 +301,13 @@ Internally, the publisher maintains a copy of this collection. This is required
 for new subscribers, which must be informed about the contents of the collection
 when they connect.
 
+Both publishers share the same underlying logic which accepts incoming connections
+from subscribers and provides notifications for disconnected clients.
+
+
+
 \paragraph{Implementation Details}
 
-Both publishers share the same underlying logic which accepts incoming connections
-from subscribers and provides a notifications for disconnected clients.
 
 Internally, this logic also make use of the \lstinline{future-rs} library, 
 since futures have also been integrated in our networking layer. A unique
@@ -431,7 +500,7 @@ have to be compiled for the same processor architecture and operating system.
 Because of this, our message buffer interface has been designed to use alternative
 serialization formats in the future. Besides supporting heterogeneous clusters,
 alternative formats might also be useful in the publish/subscribe system:
-Schema-based serialization formats would it allow subscribers to decode published
+Schema-based serialization formats would allow subscribers to decode published
 data even without static knowledge of its data type.
 
 \begin{comment}
