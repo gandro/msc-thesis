@@ -1,16 +1,16 @@
 \chapter{Implementation}\label{ch:impl}
 
 In this chapter, we discuss the implementation of the individual components
-presented in the previous chapter, but we also present some shared implementation
+presented in the previous chapter. We also present some shared implementation
 features, such as the common request/response protocol used for the
-communication between the different components.
+communication between the different components and the coordinator.
 
 \section{Coordinator}
 
 As the central component of our system, the coordinator performs a rich
 set of tasks. These involve handling submission requests to spawn new queries,
 but also handling publication and subscription requests from existing queries.
-It is the central authority about the current system state, i.e. it maintains
+It is the central authority on the current system state, i.e. it maintains
 a list of all running queries and executors, but it also tracks all existing
 publications and subscriptions. It exposes this information in the catalog.
 
@@ -26,7 +26,7 @@ For this purpose, the coordinator listens for incoming connections on that port
 and then waits for the connected clients to send requests. Once requests are
 received and decoded, they are forwarded to a central request handler. This
 request handler contains the central logic of the coordinator, keeps track of
-unfulfilled requests and mutates the catalog to announce changes in the
+unfulfilled requests and informs the catalog to announce changes in the
 system state.
 
 \subsection{Dealing with asynchronous events}
@@ -48,20 +48,23 @@ library called \lstinline{future-rs} \cite{futuresrs}. It provides a more expres
 for dealing with asynchronous tasks based on the concept of \emph{futures}. Futures
 (sometimes called promises, eventuals or deferred objects) are proxy objects for
 values that will eventually be provided through some asynchronous event.
-The \lstinline{future-rs} library provides combinators for chaining events
-together or waiting on multiple events at the same time. Actions on completed
-futures are expressed as closures. This means that stack ripping occasionally still
-occurs, however the fact that the completion handlers are chained together
-allows for a more sequentially looking code.
+The \lstinline{future-rs} library provides combinators for chaining futures
+together or waiting on multiple futures at the same time. Actions on completed
+futures are expressed as closures. This means that stack ripping occasionally
+still occurs, however the fact that the completion handlers are chained together
+allows for more sequentially looking code.
 
-A unique aspect of the implementation of \lstinline{future-rs} is that futures
-need be polled in order to make progress. When a future is polled, it checks
-if any pending events have occurred and if so, dispatch any pending completion
-handlers. It is the users responsibility to ensure that futures are being
-polled. This is typically done by registering the future in an event loop.
+A unique aspect of the implementation of \lstinline{future-rs} is that its futures
+need be polled in order to make progress, instead of proactively being called
+by event sources. When a future is polled, it checks if any pending events
+have occurred. If so, it dispatches any pending completion handlers. 
+It is the users responsibility to ensure that futures are being
+polled. This is typically done by registering the future in an event loop,
+which will repeatedly wait for events to occur before polling its registered
+futures.
 
 \subsubsection{Event Loop}
-The \lstinline{future-rs} library itself provides a set of primitives to
+The \lstinline{future-rs} library itself only provides a set of primitives to
 create and combine futures, it also provides abstractions for expressing which
 events a future is waiting for, and expressing the occurrence of events, it
 does however not provide an implementation of an event loop. Our implementation
@@ -115,15 +118,61 @@ let server = listener.for_each(|connection| {
 async::finish(server);
 \end{lstlisting}
 
+\subsubsection{Futures for Blocking Requests}
 
+Besides using futures for networking events, we also model potentially
+blocking requests such as query submissions or blocking subscriptions on
+topics which have not been registered yet. The corresponding functions in the
+request handler will return a future instead of a immediately available
+result. 
 
+\TODO{Add example code}
 
-With this abstraction, requests that might be completed asynchronously
-%(i.e. a blocking subscription request for a topic which has not yet been registered)
-are split up into a future representing the pending response, and a completion handle
-which is invoked once the request can be resolved. Bookkeeping of pending requests
-is done in the request handler.
+\begin{comment}
+\begin{lstlisting}[caption={[Handler for blocking subscription requests]
+Example how a future is created for the subscription request. Depending
+on whether it can be served immediately or not, different kinds of futures
+are returned. Bookkeeping for still pending requests is done with completion
+handles. Upon publication of a requested topic, the pending subscription will
+be completed with \lstinline{}
+}]
+struct RequestHandler {
+  // the catalog stores publications and subscriptions
+  catalog: Catalog,
+  // list of pending lookups
+  lookups: HashMap<String, Vec<Complete<Topic, SubscribeError>>>,
+  ...
+}
 
+impl RequestHandler {
+  pub fn subscribe(&mut self, request: Subscribe)
+    -> Box<Future<Item=Topic, Error=SubscribeError>>
+  {
+    // extract arguments from the request
+    let query = request.query.id;
+    let name = request.name;
+
+    // first, check if the topic actually exists
+    if let Some(topic) = self.catalog.lookup(&name) {
+      // if so, insert a new subscription into the catalog
+      self.catalog.subscribe(query, topic.id);
+      // return a sucessfully resolved future for the topic
+      return futures::done(topic).boxed()
+    } else if !request.blocking {
+      // non-blocking subscription request, fail immediately
+      let err = SubscribeError::TopicNotFound;
+      return futures::failed(err).boxed()
+    } else {
+      // allocate an unresolved future and a completion handle
+      let (handle, future) = promise();
+      // insert it into the list of pending lookups
+      self.lookups.entry(name).or_insert(vec![]).push(handle);
+
+      return Box::new(future);
+    }
+  }
+\end{lstlisting}
+\end{comment}
 
 
 \subsection{Maintaining shared mutable state}
@@ -156,7 +205,7 @@ to the schema shown in Figure~\ref{fig:model}.
 \end{figure}
 
 The catalog itself only exposes this data. It is mutated and queried by the
-request handler in order fulfill certain requests.
+request handler in order to fulfill certain requests.
 
 \section{Executor}
 
@@ -173,7 +222,7 @@ request arrives, it fetches the binary from the specified source and launches
 it as an operating system process. Any command line arguments to be passed
 to the query are provided here as well.
 
-The executor has to inform the spawned binary about its assigned query identify,
+The executor has to inform the spawned binary about its assigned query identifier,
 the address of the coordinator and the address of any peer processes. In the
 current implementation this is simply done using environment variables, which
 can easily be accessed by the spawned query.
@@ -282,7 +331,7 @@ timely_query::execute(|root, coord| {
 In addition to the stream publisher, we also provide the so called collection
 publisher. It has a similar interface for publishing, but it requires the
 type of the incoming stream to deliver \lstinline{(D, i32)} tuples, where
-the integer denotes the amount of elements have been added or removed from
+the integer denotes the amount of elements that have been added or removed from
 the collection.
 
 \begin{lstlisting}[caption={[Collection publisher interface]
@@ -327,10 +376,12 @@ function does not directly instantiate a Timely operator, but returns a subscrip
 handle which is used to read data from the topic.
 
 There are two reasons for this choice: First, Timely requires that an operator
-is instantiated on every worker. It can happen that the amount of topics a query
-would like to subscribe to and the amount of workers do not match. Thus, the API
-quickly becomes complicated, as we would need to provide an interface assigning
-topics to operators.
+is instantiated on every worker, such that all instances of the dataflow graph
+are identical. However, the amount of topics a query would like to subscribe
+to and the amount of workers it allocates might not match. Thus, the API
+quickly becomes complicated, as we would need to provide an way for the 
+query author to map topics to operator instances.
+
 Second, Timely's operator contract requires that an operator instance announces
 the internal initial capabilities it holds, and, more importantly, the initial
 capabilities of its peers. To support this would require some synchronization
@@ -373,18 +424,22 @@ timely_query::execute(|root, coord| {
 })
 \end{lstlisting}
 
-In queries which use multiple workers, the query author can decide which workers
-actually subscribe to topics, as the code outside the graph generation is allowed
-to conditionally decide if it wants to call the subscribe function. Because
-the root capability can be cloned, this interface also allows the user to
+In queries which use multiple workers, the query author can programmatically
+encode which workers subscribe to which topics, as the code outside the
+graph generation is allowed to conditionally decide if and how it wants to call
+the subscribe function. This functionality is required as there is not
+always a one-to-one mapping between published topics and workers at the
+subscribing query, and expressing the assignment in arbitrary Rust code
+give the most flexibility to the query author.
+
+Because the root capability can be cloned, this interface also allows the user to
 interleave the data from a topic with other data, for example by merging
 multiple topics at the input.
 
 \section{Shared Communications Layer}
 
-For the remainder of this chapter we discuss the networking and communications
-layer of our system, which is used all components for implementing their
-services.
+For the remainder of this chapter we discuss the networking layer of our system,
+which is used by all components to implement their services.
 
 \subsection{Messaging}
 
@@ -393,6 +448,8 @@ are running concurrently, are dynamically added and removed from the system
 and are communicating with each other. In order to deal with the inherent
 complexity of such a system, we adopted an actor-model like approach for our
 implementation.
+
+% TODO expand on actors
 
 Actors in our system include processes like the coordinator, the executors 
 and the query processes. However, as Timely by itself could be seen as an
@@ -415,7 +472,9 @@ support alternative transport layers as well.
 
 While the abstraction of single messages is sufficient for implementing the
 mostly unidirectional messaging paradigm of the publish-subscribe implementation,
-most other communication in the system follows a request-response pattern.
+most other communication in the system follows a request-response pattern,
+e.g. any communication with the coordinator.
+
 For this reason, we implemented a request-response multiplexer on
 top of the plain message channels. This multiplexer allows both actors to have
 multiple requests in flight while waiting for the corresponding responses,
@@ -502,49 +561,3 @@ serialization formats in the future. Besides supporting heterogeneous clusters,
 alternative formats might also be useful in the publish/subscribe system:
 Schema-based serialization formats would allow subscribers to decode published
 data even without static knowledge of its data type.
-
-\begin{comment}
-\section{Dealing with asynchronous requests} \label{sec:futures}
-
-Our components are dealing with many concurrent events from different sources
-at the same time. When spawning a new query for example, the coordinator not
-only has to wait for acknowledgments from the executors, it also has to be
-ready to deal with the incoming connections from the newly spawned queries. And
-ideally, we would like the system to be able to continue processing requests
-while it waits for responses from other components.
-
-The initial prototype of the coordinator used a continuation-passing style
-for requests which could not be completed immediately. However, due to
-Rust's memory ownership model, we found that this approach often resulted
-in manual \emph{stack ripping} \cite{stackmgmt}, which made code both
-hard to read and cumbersome to write. This lead us to consider the use of an
-external library to deal with this kind of asynchronous task management.
-
-One possible solution such library we considered is Timely Dataflow itself, which could
-be used to model the coordinator as a dataflow computation.
-While we think that this is certainly possible, we found the fact that Timely
-has a static dataflow graph would would have required us add an additional
-multiplexing layer at the inputs and outputs, complicating the code. 
-
-In addition, Timely currently requires all data to be serializable. Because
-the coordinator deals with non-serializable resources such as socket handles,
-we would still require a solution to deal with asynchronous events when dealing
-with I/O.
-
-The current implementation uses the \emph{futures-rs} library for modeling
-asynchronous tasks. It provides abstractions for both asynchronous computations
-that yield a single result, a \lstinline{Future}, and computations that
-continuously produce results which implement the \lstinline{Stream} interface
-(not to be confused with Timey's stream handles). The library provides combinators
-for the user to chain these asynchronous requests together or register actions
-to be taken once the asynchronous request is completed.
-
-The \emph{futures-rs} library itself however does not provide an event loop
-which reacts on events and resolves pending futures. For this reason, we implemented
-our own event loop. \TODO{This is crap}
-
-A notable difference between \emph{futures-rs} and other future-based libraries
-is that it is polling based, which fits well with Timely's execution strategy
-for operators, which are also polled.
-
-\end{comment}
