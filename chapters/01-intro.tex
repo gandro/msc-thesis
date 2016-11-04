@@ -1,13 +1,52 @@
 \chapter{Introduction}\label{ch:introduction}
 
-\section{Problem Statement}
-
-The goal of this thesis is the design and implementation of a runtime system
-for timely dataflow programs. In addition to the deployment and managing of
-dataflow programs, the system also offers the facilities to share data streams
-between running dataflow programs.
-
-
 \section{Motivation}
 
+Many applications today perform real-time monitoring and analytics on
+potentially unbounded streams of data. Examples of this include analytics for
+web applications and social networks, online processing of sensor data, 
+or monitoring and networking in datacenters. As the pool of data sources
+in this environment grows larger, and the computations become more complex,
+the need for stream management systems and expressive programming models arises.
+
+One such programming model is the \emph{timely dataflow} model, first implemented
+and introduced in the Naiad system \cite{naiad}. The timely dataflow model
+is a programming model for a wide range of data-parallel algorithms, and it has
+been demonstrated to perform well for graph and stream processing, also in the
+form of incremental and differential computations \cite{differential}.
+Timely dataflow supports stateful operators and iterative computations, while
+achieving high throughput and low-latency responses thanks to a decentralized
+coordination mechanism for global progress tracking.
+
+In this thesis, we investigate the architecture and implementation of a
+management system for running timely dataflow computations. Our work
+builds upon the Rust implementation of the timely dataflow model,
+simply called \textquote{Timely Dataflow} \cite{timely}.
+
 \section{Contribution}
+
+Being an embeddable library, the provided run-time in the current Rust implementation
+only concerns itself with executing and scheduling a single dataflow computation.
+It does support the execution in multiple processes distributed across a
+static set of machines, launching and deployment of the resulting application
+in the cluster however has to be done manually by the user. External inputs are
+fed into the dataflow graph by custom client code.
+
+The goal of this thesis is the design and implementation of a system which
+provides the following features:
+
+- launching and managing multiple concurrent dataflow programs
+- on a dynamic set of machines
+- providing mechanisms for dataflow computations to share data stream
+- providing mechanisms for system state introspection
+
+\section{Outline}
+
+In chapter \ref{ch:background}, we provide a brief overview of
+the Timely Dataflow library, its conceptual model and its implementation. The
+system designed and implemented as part of this thesis is introduced and
+discussed in detail in the chapters \ref{ch:design} \& \ref{ch:impl}. As our
+system allows the dynamic composition of dataflow programs, we evaluate the
+overhead of this feature on a realistic workload in chapter \ref{ch:evaluation}.
+A survey of related work is presented in chapter \ref{ch:related}, and chapter
+\ref{ch:future} closes with future work and conclusions.
