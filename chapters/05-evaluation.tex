@@ -42,17 +42,15 @@ reports the ten top most common tree signatures.
 communicating with each other.
 \end{description}
 
-%It should be noted that the computational overhead of most of these stages is
-%relatively low. This is shown in the cpu utilization graph.
-
 The resulting dataflow computation is shown in Figure~\ref{fig:monolith}. For
 this evaluation we split up the computation such that each stage represents
-its own query. In order to achieve this, we introduce two topics: The topic
+its own sub-query. In order to achieve this, we introduce two topics: The topic
 \emph{sessionize} contains the result of the sessionization stage, i.e. 
 a list of messages per session. The second topic, named \emph{transactions},
 is introduced for the transaction-oriented statistics. It emits a stream
 containing all the transactions per session. The resulting composed dataflow
-graph is shown in Figure~\ref{fig:split}, it consists of seven queries.
+graph is shown in Figure~\ref{fig:split}, it consists of seven queries, each
+one running in its own operating system process.
 
 \begin{figure}[p]
   \centering
@@ -68,4 +66,39 @@ graph is shown in Figure~\ref{fig:split}, it consists of seven queries.
   \caption[Dataflow graph for modular sessionization]{Structure of the modular
   sessionization. Two topics are introduced connect the tree of queries.}
   \label{fig:split}
+\end{figure}
+
+\subsection{Worker Distribution}
+
+In this experiment, we vary the number of worker threads for both the monolithic
+and the composed query. Because the intermediate operators in this computation
+do not shuffle the data between workers, we publish the topics per worker. Merging
+the intermediate stream partitions before publishing would just require the
+subscribers to re-partition it, resulting in useless work. For this reason, we
+use the same amount of workers for all sub-queries in the composed version.
+
+This means however that the composed version will end up spawning more operating
+system threads than the monolithic version, allowing it to access more of the
+available CPU cores. To avoid making an unfair comparison, we bind all threads
+to a fixed set of CPU cores, such that the amount of workers per processe
+matches the amount of available CPU cores. We compared the different processor
+and memory placement policies, shown in Table~\ref{table:numa}.  
+
+
+
+\subsection{Results}
+
+\begin{figure}[p]
+  \centering
+    \includegraphics[width=1\textwidth]{figures/evaluation/times}
+\end{figure}
+
+\begin{figure}[p]
+  \centering
+    \includegraphics[width=1\textwidth]{figures/evaluation/overhead}
+\end{figure}
+
+\begin{figure}[p]
+  \centering
+    \includegraphics[width=1\textwidth]{figures/evaluation/rss}
 \end{figure}
