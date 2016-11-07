@@ -4,16 +4,17 @@
 
 Many applications today perform real-time monitoring and analytics on
 potentially unbounded streams of data. Examples of this include analytics for
-web applications and social networks, online processing of sensor data, 
-or monitoring and networking in datacenters. As the pool of data sources
-in this environment grows larger, and the computations become more complex,
-the need for stream management systems and expressive programming models arises.
+commercial web applications and social networks, online processing of sensor
+data, and monitoring and networking in datacenters. In many deployments however,
+the number of data sources and the amount and complexity of queries will increase
+over time, and thus the need for management systems and expressive programming
+models for online stream processing arises.
 
-One such programming model is the \emph{timely dataflow} model, first implemented
-and introduced in the Naiad system \cite{naiad}. The timely dataflow model
-is a programming model for a wide range of data-parallel algorithms, and it has
-been demonstrated to perform well for graph and stream processing, also in the
-form of incremental and differential computations \cite{differential}.
+One such programming model for a wide range of data-parallel algorithms is
+the \emph{timely dataflow} model, first implemented and introduced in the
+Naiad system \cite{naiad}. The timely dataflow model has been successfully
+used for stream and graph processing, and it the central building block for
+higher-level abstractions such as differential dataflow \cite{differential}.
 Timely dataflow supports stateful operators and iterative computations, while
 achieving high throughput and low-latency responses thanks to a decentralized
 coordination mechanism for global progress tracking.
@@ -21,24 +22,27 @@ coordination mechanism for global progress tracking.
 In this thesis, we investigate the architecture and implementation of a
 management system for running timely dataflow computations. Our work
 builds upon the Rust implementation of the timely dataflow model,
-simply called \textquote{Timely Dataflow} \cite{timely}.
+simply called \textquote{Timely Dataflow}\footnote{We use the capitalized term
+for the implementation, while the model is referred to in lower-case.} \cite{timely}.
+\section{Goals}
 
-\section{Contribution}
-
-Being an embeddable library, the provided run-time in the current Rust implementation
-only concerns itself with executing and scheduling a single dataflow computation.
-It does support the execution in multiple processes distributed across a
-static set of machines, launching and deployment of the resulting application
-in the cluster however has to be done manually by the user. External inputs are
-fed into the dataflow graph by custom client code.
+Being an embeddable library, the current run-time of Timely Dataflow only
+concerns itself with the execution and scheduling a single processing job.
+While it does support the distributed execution of a dataflow computation
+over a static set of machines, launching and deployment of the resulting application
+has to be done manually by the user. External inputs are managed
+by the user and fed into the dataflow graph by custom client code.
 
 The goal of this thesis is the design and implementation of a system which
 provides the following features:
 
-- launching and managing multiple concurrent dataflow programs
-- on a dynamic set of machines
-- providing mechanisms for dataflow computations to share data stream
-- providing mechanisms for system state introspection
+\begin{itemize}
+\item Handling of the deployment and execution of multiple concurrent dataflow programs.
+\item Providing interfaces for the submission new of dataflow programs.
+\item Dynamic addition and limited removal of machines to the cluster.
+\item Managing of data streams consumed and produced by the running dataflow computations.
+\item Allowing system introspection by exposing metadata about the current system state.
+\end{itemize}
 
 \section{Outline}
 

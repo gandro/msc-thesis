@@ -7,27 +7,32 @@ model} introduced by Naiad \cite{naiad}.
 \section{Computational Model}
 
 Timely Dataflow is a framework for writing dataflow programs. Dataflow programming
-accommodates an execution model which can be represented as a directed graph:
-Data flows along edges, while the computational logic in vertices transforms it.
-Notable features of Naiad and Timely Dataflow are: support for structured loops,
-stateful vertices and the option for vertices to be notified if given input
-rounds of data are completed. \cite{naiad}
+is a programming model in which the computation can be represented as a directed graph:
+The data flows along edges, while the computational logic in the vertices transforms it.
+In Timely Dataflow, the vertices are also called operators, and the edges connecting
+them are called streams. Notable features of the timely dataflow model in comparison
+to many other dataflow systems are its support for structured loops, stateful
+vertices and the option for vertices to be notified if given input rounds of
+data are completed. \cite{naiad}
 
 In the timely dataflow model, the messages flowing along edges are annotated with
 timestamps. Timestamps typically denote input rounds, or within the scope of a
-structured loop, the loop iteration count. Timely's progress tracking mechanism requires
-timestamps to implement a partial order, such that operators can ask the system
-to be notified when there are no more outstanding messages for a given timestamp.
-This allows Timely to deliver the actual messages out of order, while 
-guaranteeing the operators are informed about the existence of still pending
-messages.
+structured loop, the iteration count. Timestamps in timely dataflow must
+define a partial order, allowing the comparison of timestamps for progress
+tracking purposes: Timely offers user code to be notified when there are
+no more outstanding messages for a given timestamp at a certain edge.
+This allows the delivery of messages to happen out of order, while the system
+is still able to inform operators about the existence of messages in-flight.
+The progress tracking algorithm of Timely Dataflow is able to provide these
+guarantees with minimal synchronization, allowing the computation on different
+machines to advance asynchronously.
 
-Dataflow graphs in Timely are hierarchically structured, allowing
-nested subgraphs, called scopes. A scope can define its own clock
-domain, where the scope's timestamps are appended to the timestamps of messages
-entering from outer scopes. When messages leave a scope again, the inner 
-timestamp is stripped. Consequently, Timely implements timestamps
-as product types with a defined partial order.
+Dataflow graphs in Timely Dataflow are hierarchically structured, allowing
+nested subgraphs, called scopes. A subscope can define its own clock
+domain, where the timestamps of the inner scope are appended to the timestamps of messages
+entering from outer scopes. When messages leave a subscope, the inner 
+timestamp is stripped. Consequently, Timely implements these scoped timestamps
+as product types, with the partial order derived from the combined elements.
 
 \subsection{Data-Parallelism}
 
@@ -42,21 +47,22 @@ instance on one worker might be pushed to the conceptual successor vertex
 hosted on a different worker.
 
 This distribution of work can result in messages being delivered out of
-order in regard to their timestamp. This motivates Timely to provide the
-progress tracking mechanism described below, which allows operators to
-be argue about globally outstanding messages.
+order. This motivates Timely to provide the progress tracking mechanism
+described below, which allows operators to be argue about globally
+outstanding messages.
 
 \subsection{Progress Tracking}
 
-A key feature of the timely dataflow model is its fine-grained support for notification
+A key feature of the timely dataflow model is its support for fine-grained notification
 about the advancement of messages in flight, i.e. informing operators about
 timestamps for which no more messages will arrive. The set of still observable
-timestamps at a certain input edge is derived from the \emph{frontier}. Based on
-the partially ordered set of possible timestamps $T$, the frontier (at a given
-input and a certain time) is defined as a subset (more precisely, an antichain)
-$F = \{t_1, t_2, \dots, t_n \in T \}$
-which restricts the set of observable future timestamps:
-$S_F = \{ t_s \mid \exists t_f \in F: t_s \geq t_f \}$
+timestamps at a certain input edge at any point in time is derived from the \emph{frontier}.
+A frontier $F$ restricts the set of observable future timestamps $S_F$ as follows:
+$S_F = \{ t_s \mid \exists t_f \in F: t_s \geq t_f \}$ -- any future message must
+have a timestamp that is greater or equal than any timestamp in the frontier.
+The frontier itself is a subset of non-comparable timestamps (i.e. an antichain)
+$F = \{t_1, t_2, \dots, t_n \in T \mid  t_i \parallel t_j \}$, where
+$T$ is the clock domain of the input.
 
 Operators must ask the system to be notified when the frontier advances. This
 is typically done by asking for notification about the progress of messages with
@@ -79,7 +85,7 @@ dataflow graph construction and progress tracking, while a second library
 called \lstinline{time\-ly_\-com\-mu\-ni\-ca\-tion} implements the creation and
 initialization of worker threads and provides primitives for communication.
 These communication primitives come in the form of asynchronous unidirectional
-channels and are used by both workers and operators, though in different ways.
+channels and are used by both workers and operators, though in different ways:
 Workers use these channels for the exchange of progress tracking messages, while
 operators use them to push data along the dataflow edges.
 
