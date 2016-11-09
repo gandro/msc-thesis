@@ -1,16 +1,16 @@
 \chapter{Evaluation}\label{ch:evaluation}
 
-For the evaluation we split a monolithic dataflow computation into a
-modular set of queries. These queries publish the result of their computation
-in a topic, allowing subscribers to further process the data. Because queries
+For our experimental evaluation we split a monolithic dataflow computation into a
+modular set of queries. The modular queries share their results in a topic,
+allowing subscribers to further process the data. Because queries
 can be dynamically added to the system, there is no need to interrupt the
 running computation if additional analysis stages have to be added.
 
-This increased flexibility however comes at a cost. As data has to be published
+This increased flexibility comes however at a cost. As data has to be published
 in topics in order to be accessed by consuming queries, we expect there to be
 some overhead in both memory consumption and processing latency. The goal
 of this chapter is to measure and analyze the overhead of query composition
-with a realistic workload.
+on a realistic workload.
 
 \paragraph{Experimental setup}
 
@@ -25,22 +25,23 @@ via iSCSI on a private 10 Gbit Ethernet network.
 The dataflow computation in this experiment is based on \emph{sessionization},
 i.e. the reconstruction of user sessions from a trace of log events.
 
-\subsection{Workload and computation}
+\subsection{Computation \& workload}
 
-The workload in this experiment is a hour-long trace of log events collected in
-a large datacenter owned by a travel company. The messages in our trace are
-collected concurrently by 42 log servers, which receive their log events from
-1263 different streams. Events are created by a distributed middleware which acts
+The workload in this experiment is an hour-long trace of log events, collected in
+a large datacenter owned by a travel company. The messages in our trace were
+accumulated concurrently by 42 log servers, which received their log events from
+1263 different streams. Events are originating from a distributed middleware which acts
 as a message broker. It records metadata about the received messages, such as
 timestamp, session identifer, and transaction identifer, and forwards them to
 the log sever.
 
-The computation we use on this workload is called sessionization. Sessionization
-is the reconstruction of user sessions, i.e. grouping of all messages belonging
-to the same session. For this purpose, the computation has to wait for late
-messages to arrive deliveries before it can consider the session closed. In
+The computation we use on this workload is called \emph{sessionization}. Sessionization
+is the reconstruction of user sessions, i.e. grouping and then processing all
+messages belonging to the same session. For this purpose, the computation wait for
+the arrival of late messages before it can consider the session closed. In
 our experiment we use a fixed inactivity limit of 5 seconds, and re-order messages
-within an event time window of 10 seconds. 
+within an event time window of 10 seconds. This is enough to incooperate more
+than 99.99\% of all messages. 
 
 While sessionization has been designed for real-time processing on a live
 stream of events, we will load the workload trace from disk for our experiments.
@@ -48,20 +49,20 @@ This not only simplifies the experimental design and ensures reproducibility,
 it also allows us to explore the behavior of the system if there are only a
 few worker threads.
 
-% TODO mention that even with the overhead we are able to keep up in real time
-
 \subsection{Dataflow graph}
 
-Input is read from disk and fed into the dataflow graph in parallel, each worker
-is responsible for a partition of the log servers. The read messages are
-re-ordered in a 10 second according to their event time to ensure all messages 
+Input is read by from disk and fed into the dataflow graph in parallel, each worker
+is responsible for a partition of the log servers. The read messages are sent
+into the sessionization stage, where all messages belonging to the same session
+are grouped together.
 
-
-We partition the message trace over the workers and read in parallel
-through a re-order buffer.
 After the sessionization, the computation performs a set of statistics on the
 reconstructed sessions. The stages are described below, the resulting dataflow
 graph is shown in Figure~\ref{fig:monolith}
+
+Messages are shuffeled according to their session identifier for the
+sessionization stage, and are processed in parallel until statistics are
+collected for the output, which is emitted at a single worker. 
 
 \begin{description}
 \item [Input] Parses the input files and feeds them into the sessionization stage.
@@ -78,10 +79,6 @@ communicating with each other.
 \item [Output] Collects emitted data in a histogram.
 \end{description}
 
-Messages are first shuffeled according to their session identifier for the
-sessionization stage, and are processed in parallel until statistics are
-collected at a single worker for the output.
-
 \subsubsection{Splitting up the dataflow graph}
 
 For this evaluation we split up the computation such that each stage represents
@@ -90,7 +87,7 @@ its own sub-query. In order to achieve this, we introduce two topics: The topic
 the groups of messages belonging to a session. The second topic, named
 \emph{transactions}, is introduced for the transaction-oriented statistics.
 It emits a stream containing all the transactions per session. The resulting
-composed dataflow graph is shown in Figure~\ref{fig:split}, it consists of
+modular dataflow graph is shown in Figure~\ref{fig:split}, it consists of
 seven queries, each one running in its own operating system process.
 
 \begin{figure}[p]
@@ -112,18 +109,16 @@ seven queries, each one running in its own operating system process.
 \paragraph{Topic Partitioning}
 
 We maintain a simple one-to-one mapping between the number of topics and
-number of worker threads in the subscribers for the composed query.
+number of worker threads in both the publishers and the subscribers.
 Merging the stream partitions for publication and redistributing
 the data at each subscriber would just result in unnecessary work.
 
-% TODO show distribution inside topics
-
 \subsection{Worker-to-processor mapping}
 
-Because we use the same amount of workers for each query, but the composed
-version naturally consists of more than one query, the execution of the
-composed version will spawn more operating system threads than
-the monolithic version.
+We use the same amount of workers for each query to simplify topic partitioning.
+But because the modular version naturally consists of more than one query,
+the execution of the modular version will spawn more operating system threads
+than the monolithic version.
 
 For this reason we limit the the available CPU cores for the different executions,
 ensuring the number of workers per query matches the number of available CPU cores.
@@ -131,19 +126,20 @@ Because our machine does have two processor sockets, each with their own memory 
 the question arises how performance is impacted by different processor placement
 policies. We explore this in section~\ref{sec:evalnuma}.
 
-Based on this, we prefer using as many physical cores as possible before falling back
-to hyper-threads, and we prefer filling the first socket before allocating
-threads on the second socket. The memory allocation policy is set up to
-always allocate on the local node.
+However, were not stated otherwise we prefer using as many physical cores 
+as possible before falling back to hyper-threads, and we prefer filling the
+first socket before allocating threads on the second socket. The memory
+allocation policy is set up to always allocate on the local node.
 
 Note that we do not pin individual worker threads to individual cores, we just
-limit the access to additional cores. The operating system is free to load-balance
+disallow access to excess cores. The operating system is free to load-balance
 threads between the available cores.
+
+\clearpage
 
 \section{Results}
 
-
-\subsection{Overhead for different number of workers}
+\subsection{Overhead in execution time}
 
 We report the overall execution time of of both the monolithic and the 
 modular query for different amounts of worker threads in Figure~\ref{fig:times}.
@@ -164,45 +160,56 @@ modular query for different amounts of worker threads in Figure~\ref{fig:times}.
     }
     \caption[Execution times for different number of workers]{
     Execution times for different number of workers, for both the monolithic
-    and the composed version.}
+    and the modular version.}
     \label{fig:times}
 \end{figure}
 
 As expected, we see that the modular version is slower than its monolithic
 counterpart. Where the monolithic query uses in-memory queues to send data
-to the next stage, the participants of composed version have to serialize
+to the next stage, the participants of modular version have to serialize
 the messages and publish them in a topic. Both versions don't necessarily
-perform better if we use hyper-threading for additional worker threads. 
+perform better if we use hyper-threading for additional worker threads,
+as 24 workers in both cases perform worse than 16.
 
-Note that the relative overhead is not proportional to the number of
-workers. We show in section~\ref{sec:evalnuma} that worker placement also
-impacts the overhead.
+The relative overhead varies between 13-18\%. Previous work has shown that
+sessionization is able perform real-time processing on this machine with
+16 workers and more. Our monolithic version is indeed also able to finish
+the computation in under one hour with 16 workers and more. The modular version
+however only achieves execution times below the threshold of one hour with
+32 workers.
+
+It should be noted that relative overhead is not proportional to the number
+of worker threads. We will show in section~\ref{sec:evalnuma} that other
+factors such as placement also impact the overhead.
+
+\clearpage
 
 \subsection{Worker utilization factor}
 
-In this section we present the average measured utilization per worker, i.e. the proportion
-of time a worker performs useful work. This gives us an indicator how much load
-is put on the different queries.
+In this section we present the average measured utilization \emph{per worker},
+i.e. the proportion of time a worker thread performs useful work.
+This gives us an indicator of how well the different queries of the modular
+version are able to cope with the given load.
 
 We define the utilization factor of a worker as the percentage of
 the time spent inside the Timely computation, i.e.
 $\text{utilization} = \frac{\text{busy time}}{\text{total time}}$.
-If a worker is not busy, it waiting on external input. This means either from a
-topic in the case of the subscribers, or from the external input from disk in
-the case of the sessionization stage.
+To put it another way, a worker is \emph{not busy} if it is waiting on external input.
+This is the case if it wait on input from a topic in the case of the subscribers, 
+or if it reads data from disk in the case of the sessionization stage.
 
 Figure~\ref{fig:subutil} shows the average utilization for the subscribers, while
 Figure~\ref{fig:sessutil} shows the utilization for the whole monolithic query
 compared to the sessionization stage of the modular query. 
 
-We see that in all cases the average utilization for the sessionization stage
-is much higher than for the other queries in the modular version, indicating
-that it sessionization itself the bottleneck of the computation. This trend
-increases with the number of threads. With many threads, the he workers of
-the subscribing queries are idle waiting for input most of the time.
+We see that in all cases the average utilization in the sessionization workers
+is significantly higher than in the other queries of the modular version. This indicates
+that the sessionization stage itself the bottleneck of the computation. 
+We see that with a high number of worker threads, individual workers are proportionally
+spending more and more time waiting for input.
 
-This suggests that in a realistic scenario we would not want to use the same
-amount of worker threads for all queries. Future experiments would have to
+This suggests that using the same amount of workers for all queries might
+not be the most efficient use of computational resources. Future experiments would have to
 explore how many worker threads are actually necessary for the different queries
 in order to keep up. This however also requires a more sophisticated assignment of
 topics to subscribing workers, which currently has to be manually encoded in
@@ -249,10 +256,10 @@ and one for sessionization}
 \paragraph{Processor utilization}
 
 We also report the overall processor utilization reported by the operating system.
-A value of 100\% would correspond to the full utilization of 32 cores. We see that
-neither versions manage to fully utilize the processors over then duration of
-the whole computation. This is caused by the fact that both versions have to wait
-for external input. Corresponding to the observations from worker utilization, we
+A value of 100\% would correspond to the full utilization of all 32 logical cores.
+We see that neither versions manage to fully utilize the processors over then duration of
+the whole computation. This is indicates that both versions are sometimes blocked
+on external input. Consistent with the observations from worker utilization, we
 also see that the sessionization stage is the most compute heavy.
 
 \begin{figure}[p]
@@ -320,3 +327,31 @@ of the execution time.
     \label{fig:numa}
 \end{figure}
 
+\clearpage
+\subsection{Discussion}
+
+In this chapter we presented an experimental evaluation of the overhead of
+query composition in our system. The results show that the modular version in
+our setting takes about 13-18\% longer to execute and consumes 8-14\% more
+memory. While this is not negligible, we are confident that a modular version
+of sessionization would be able to keep up with real-time processing, given
+enough resources.
+
+We believe though that further experiments are indispensable to definitely 
+answer this question. Unfortunately we were not able to conduct more experiments
+within the remaining time.
+
+For one, future experiments should evaluate the performance of modular sessionization
+in a cluster of machines. We only ran our experiments on a single machine, meaning that
+data shared in topics was transmitted over the loopback interface.
+Having publishers on one machine and subscribers on another would certainly yield
+different performance characteristics. The monolithic version would also
+likely show a different performance behavior, as workers would have to shuffle their data over the
+network instead of using shared memory queues.
+
+In addition, we did not perform any microbenchmarks to evaluate the performance
+characteristics of other features of our system, such as the latency
+of spawning a new query or the time it takes to subscribe to a topic. While
+this would be interesting to evaluate, it currently would only be of little
+significance for long-lived queries such as sessionization, as we expect
+these features to be used mostly during the set-up phase of a query.
