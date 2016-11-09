@@ -1,0 +1,18 @@
+digraph G {
+    rankdir="LR";
+    graph [fontname = "source sans pro bold"];
+    node [fontname = "source sans pro light"];
+    edge [fontname = "source sans pro light"];
+    node [style=rounded, shape=box]
+
+    subgraph cluster_1 {
+        label="Root Scope";
+        graph[style=dotted];
+
+        "External Input" -> "Parse"
+        "Parse" -> "Filter"
+        "Filter" -> "Group By"
+        "Group By" -> "..."
+        "..." -> "Result"
+    }
+}

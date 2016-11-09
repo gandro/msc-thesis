@@ -42,8 +42,8 @@ on the incident edges of an operator. During execution, the dataflow graph
 is instantiated on possibly many worker threads, where each worker maintains
 a local copy of the dataflow graph. As data is pushed along the edges of the
 conceptual graph, it is sent to the designated worker according to the
-partitioning scheme. To put it another way, the data emitted by the vertex
-instance on one worker might be pushed to the conceptual successor vertex
+partitioning scheme. To put it another way, the data emitted by an operator
+instance on one worker might be pushed to a successor operator
 hosted on a different worker.
 
 This distribution of work can result in messages being delivered out of
@@ -102,10 +102,41 @@ Many of the provided operators accept user-defined functions to implement
 parts of their logic.
 
 External input is fed to the dataflow computation using input operators. These
-provide a handle for external code to push data with assigned timestamps into
+provide a handle for client code to push data with assigned timestamps into
 the dataflow graph. Operator outputs are represented
 by typed \lstinline{Stream} handles, which are used by succeeding operators
 to connect the stream to their input ports.
+
+\begin{lstlisting}[caption={[Example program in Timely Dataflow.]A trival 
+single-threaded example program which reads lines from standard input,
+converts them into integers and filters out odd numbers.}]
+timely::execute(Configuration::Thread, |root| {
+  let mut input = root.scoped(|scope| {
+    let (input, stream) = scope.new_input();
+      stream
+        .map(|x: String| x.parse::<i32>().unwrap_or(0))
+        .filter(|x| x % 2 != 0)
+        .inspect(|x| println!("odd number: {:?}", x));
+      input
+  });
+
+  let stdin = std::io::stdin();
+  for (data, timestamp) in stdin.lock().lines().zip(1..) {
+    input.send(data.unwrap());
+    input.advance_to(timestamp);
+    root.step();
+  }
+})
+\end{lstlisting}
+
+\subsection{Worker Threads}
+
+Timely implements a data-parallel approach for its computation. This is done by
+instantiating the dataflow graph on multiple worker threads, where each worker
+drives the computation of its local instance. Workers can be distributed among multiple
+machines, where the computation consists of multiple operating system processes
+which are communicating with each other over the network. Such an
+operating system process might host multiple worker threads.
 
 \subsection{Run-time Graph Representation} \label{sec:runtime-graph}
 
@@ -120,12 +151,13 @@ tracking and operator scheduling.
 
 By implementing this interface, operators describe their inputs and
 outputs in terms of what capabilities they initially hold and how message
-timestamps can advance when passing through. The second part is needed because
-nested subgraphs are also just represented to their parent as single operators.
-By requesting so called path summary of every child's internal structure, the
-parent has sufficient information to perform progress tracking for its
-children. The operator interface is also used by parents to inform their children
-about the initial capabilities and path summaries of their surroundings.
+timestamps can advance when passing through (the \textquote{path summary}).
+The second part is needed because nested subgraphs are represented to their
+parent as single operators. By requesting a path summary of every child's
+internal structure, the parent has sufficient information to perform progress
+tracking for its children. The operator interface is also used by parents
+to inform their children about the initial capabilities and path summaries
+of their surroundings.
 
 Once construction is complete, the dataflow graph cannot be changed anymore.
 Timely requires that every worker hosts exactly the same dataflow graph
@@ -186,5 +218,20 @@ and spawning them it in parallel.
 The amount of worker threads needs to fixed for a given execution of the
 program, as all the workers are fully connected in order to be able to exchange
 messages. The addresses of any peer processes is provided programmatically
-or alternatively read from a text file.
+or alternatively read from a text file. In all cases the worker configuration
+is represented by the \lstinline{Configuration} data type shown below:
 
+\begin{lstlisting}[caption={[Timely's worker configuration data type]
+Timely's worker configuration is one the three options. The parameters in 
+\lstinline{Cluster} indicates the number of threads per host, the index
+of the local host, the list of all participating hosts and a boolean flag
+to enable reporting.}]
+pub enum Configuration {
+    /// Use one thread.
+    Thread,
+    /// Use one process with an indicated number of threads.
+    Process(usize),
+    /// Expect multiple processes distributed in a cluster
+    Cluster(usize, usize, Vec<String>, bool),
+}
+\end{lstlisting}
