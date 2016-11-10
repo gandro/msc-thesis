@@ -14,7 +14,7 @@ on a realistic workload.
 
 \paragraph{Experimental setup}
 
-All experiments in this chapter are executed on a dual-socket Intel Xeon E5-2650
+All experiments are executed on a dual-socket Intel Xeon E5-2650
 machine (2.0GHz, 8 cores per socket, 2 threads per core) with 64 GB RAM. All components and
 queries in our system are compiled with a Rust 1.14 nightly build (2016-10-20)
 and executed on Debian 7.8. The input data is read from a SAN storage attached
@@ -28,7 +28,7 @@ i.e. the reconstruction of user sessions from a trace of log events.
 \subsection{Computation \& workload}
 
 The workload in this experiment is an hour-long trace of log events, collected in
-a large datacenter owned by a travel company. The messages in our trace were
+a large datacenter owned by an provider for the travel industry. The messages in our trace were
 accumulated concurrently by 42 log servers, which received their log events from
 1263 different streams. Events are originating from a distributed middleware which acts
 as a message broker. It records metadata about the received messages, such as
@@ -37,7 +37,7 @@ the log sever.
 
 The computation we use on this workload is called \emph{sessionization}. Sessionization
 is the reconstruction of user sessions, i.e. grouping and then processing all
-messages belonging to the same session. For this purpose, the computation wait for
+messages belonging to the same session. For this purpose, the computation waits for
 the arrival of late messages before it can consider the session closed. In
 our experiment we use a fixed inactivity limit of 5 seconds, and re-order messages
 within an event time window of 10 seconds. This is enough to incooperate more
@@ -51,7 +51,7 @@ few worker threads.
 
 \subsection{Dataflow graph}
 
-Input is read by from disk and fed into the dataflow graph in parallel, each worker
+Input is read from disk and fed into the dataflow graph in parallel, each worker
 is responsible for a partition of the log servers. The read messages are sent
 into the sessionization stage, where all messages belonging to the same session
 are grouped together.
@@ -79,17 +79,6 @@ communicating with each other.
 \item [Output] Collects emitted data in a histogram.
 \end{description}
 
-\subsubsection{Splitting up the dataflow graph}
-
-For this evaluation we split up the computation such that each stage represents
-its own sub-query. In order to achieve this, we introduce two topics: The topic
-\emph{sessionize} contains the result of the sessionization stage, i.e. 
-the groups of messages belonging to a session. The second topic, named
-\emph{transactions}, is introduced for the transaction-oriented statistics.
-It emits a stream containing all the transactions per session. The resulting
-modular dataflow graph is shown in Figure~\ref{fig:split}, it consists of
-seven queries, each one running in its own operating system process.
-
 \begin{figure}[p]
   \centering
     \includegraphics[width=1\textwidth]{figures/sessionize_dataflow-crop}
@@ -105,6 +94,18 @@ seven queries, each one running in its own operating system process.
   sessionization. Two topics are introduced connect the tree of queries.}
   \label{fig:split}
 \end{figure}
+
+\subsubsection{Splitting up the dataflow graph}
+
+For this evaluation we split up the computation such that each stage represents
+its own sub-query. In order to achieve this, we introduce two topics: The topic
+\emph{sessionize} contains the result of the sessionization stage, i.e. 
+the groups of messages belonging to a session. The second topic, named
+\emph{transactions}, is introduced for the transaction-oriented statistics.
+It emits a stream containing all the transactions per session. The resulting
+modular dataflow graph is shown in Figure~\ref{fig:split}, it consists of
+seven queries, each one running in its own operating system process.
+
 
 \paragraph{Topic Partitioning}
 
@@ -126,7 +127,7 @@ Because our machine does have two processor sockets, each with their own memory 
 the question arises how performance is impacted by different processor placement
 policies. We explore this in section~\ref{sec:evalnuma}.
 
-However, were not stated otherwise we prefer using as many physical cores 
+If not stated otherwise, we prefer using as many physical cores 
 as possible before falling back to hyper-threads, and we prefer filling the
 first socket before allocating threads on the second socket. The memory
 allocation policy is set up to always allocate on the local node.
@@ -167,22 +168,22 @@ modular query for different amounts of worker threads in Figure~\ref{fig:times}.
 As expected, we see that the modular version is slower than its monolithic
 counterpart. Where the monolithic query uses in-memory queues to send data
 to the next stage, the participants of modular version have to serialize
-the messages and publish them in a topic. Both versions don't necessarily
+the messages and publish them in a topic. Both versions do not necessarily
 perform better if we use hyper-threading for additional worker threads,
 as 24 workers in both cases perform worse than 16.
 
-The relative overhead varies between 13-18\%. Previous work has shown that
-sessionization is able perform real-time processing on this machine with
-16 workers and more. Our monolithic version is indeed also able to finish
-the computation in under one hour with 16 workers and more. The modular version
-however only achieves execution times below the threshold of one hour with
-32 workers.
+Previous work has shown that sessionization is able perform real-time processing
+on this machine with 16 workers and more. Our monolithic version is indeed also
+able to finish the computation in under one hour with 16 workers and more.
+The modular version however only achieves execution times below the threshold
+of one hour with 32 workers. Further work has to be done to investigate where
+exactly the overhead comes from and optimize our system accordingly, such that
+we achieve real-time performance with less workers.
 
-It should be noted that relative overhead is not proportional to the number
-of worker threads. We will show in section~\ref{sec:evalnuma} that other
-factors such as placement also impact the overhead.
-
-\clearpage
+The relative overhead varies between 13-18\%. It should be noted that relative
+overhead is not proportional to the number of worker threads. We will show
+in section~\ref{sec:evalnuma} that other factors such as placement also
+impact the overhead.
 
 \subsection{Worker utilization factor}
 
@@ -328,7 +329,7 @@ of the execution time.
 \end{figure}
 
 \clearpage
-\subsection{Discussion}
+\section{Discussion}
 
 In this chapter we presented an experimental evaluation of the overhead of
 query composition in our system. The results show that the modular version in
@@ -354,4 +355,4 @@ characteristics of other features of our system, such as the latency
 of spawning a new query or the time it takes to subscribe to a topic. While
 this would be interesting to evaluate, it currently would only be of little
 significance for long-lived queries such as sessionization, as we expect
-these features to be used mostly during the set-up phase of a query.
+these features mostly to be used during the set-up phase of a query.

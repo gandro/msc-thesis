@@ -5,7 +5,7 @@ computations. It provides two main services which we discuss separately:
 First, deployment and execution of user-submitted Timely programs, and secondly,
 sharing of data streams between running timely dataflow computations.
 
-\section{Overall Architecture}
+\section{Overall architecture}
 
 Our system consists of multiple components which we briefly describe here:
 A dataflow program submitted to run as part of the system is
@@ -49,7 +49,7 @@ computation as \emph{topics}, which in turn other queries can subscribe to.
     Catalog & Data collection storing the system state at the coordinator.\\
     Topic & A named and typed representation of an exposed data stream.\\
     Publisher & Operator for exposing Timely streams by publishing them as a topic.\\
-    Subscriber & Operator emitting the data stream published into a given topic.\\
+    Subscriber & Consumer of a stream emitted by a given topic.\\
     % submission
     % dataflow graph
     \bottomrule
@@ -116,8 +116,9 @@ to introspect system state using Timely operators.
 
 \subsection{Submission}
 
-A query is submitted to the coordinator as a binary executable. A submission
-consists of an URL for the query binary, as well as the runtime
+A query is submitted to the coordinator as a binary executable, compilation
+is done externally to allow the use of third-party libraries. A submission
+consists of the link to the query binary, as well as the runtime
 configuration for the workers. The runtime configuration specifies the amount
 and distribution of the worker threads which will drive the query.
 
@@ -192,7 +193,7 @@ be removed from the system while the queries spawned by the executor are still
 running. In this case, the coordinator removes the terminating executor from
 the pool, disallowing any future queries to be hosted on the removed executor.
 
-\paragraph{Future Considerations}
+\paragraph{Future considerations}
 
 The current implementation of executors which run queries in their own separate
 process is not the only possible implementation choice.
@@ -205,7 +206,7 @@ of multiple worker threads within a single operating system thread could also
 be implemented for certain queries where its input is managed by the system.
 
 
-\section{Sharing Data Streams} \label{sec:sharingstreams}
+\section{Sharing data streams} \label{sec:sharingstreams}
 
 Dataflow programs typically work on streams from external sources. As the same
 data source might be of interest for different dataflow computations, it seems
@@ -216,18 +217,22 @@ for other queries. These assumptions motivate us to extend our system with a
 mechanism to allow queries to expose their data streams for consumption by other
 queries.
 
-\TODO{Motivation for topic-based pubsub:
-
-- discoverability and type-soundness of topics, type-based reflection hard
-
-- decoupling from producer and consumer (no storing of old data, buffering done by library)
-
-- dynamic adding and removal of topics decoupled from queries lifetime}
-
-We loosely adapted the terminology of publish/subscribe systems: Using the
-\emph{publish} operator, a query can expose one of its stream
+We implement this in the form of a topic-based publish/subscribe system:
+Using the \emph{publish} operator, a query can expose one of its stream
 (an edge in the dataflow graph) to other queries, which in turn then \emph{subscribe}
 to it. The list of all published topics is stored at in the catalog.
+
+The reason for choosing a topic-based publish/subscribe system over a
+content- or type-based one is dictated by the fact that Rust allows for little
+type introspection. In addition, having users explicitly publish and name
+exposed streams helps to differentiate between streams with the same datatype
+but different semantics.
+
+For providing access to external inputs, we require that a designated query
+translates these external inputs into Timely streams and publishes the result as
+a topic. We prefer this manual approach over providing our own adapters as there
+already exists a rich collection of Timely-aware code which performs this
+translation of external input to Timely streams.
 
 \subsection{Topics}
 
@@ -251,7 +256,7 @@ actual exchange of data happens directly between queries. When a query subscribe
 to a topic, it receives the address of the topic's publisher from the coordinator
 and directly connects to it.
 
-\subsection{Stream Publisher}
+\subsection{Stream publisher}
 
 A stream publisher is a Timely operator which exposes a Timely stream as a topic. When
 creating it, the query author has to assign a name for the topic under which the
@@ -262,48 +267,41 @@ if each worker publishes its own topic. The latter option implicitly exposes
 the data sharding strategy of the publishing query, allowing the workers of
 the subscribing query to exploit this partition scheme.
 
-\subsubsection{Collection Publisher}
+\subsubsection{Collection publisher}
 
-\begin{comment}
-This however might be too limiting for some use cases where previously published
-data might is essential for a full understanding of the data stream. A simple
-solution for this problem would be to buffer the stream at the publisher
-and replay it to every incoming subscriber. While simple, this approach
-would be wasteful in cases where the data in the buffer becomes stale and
-irrelevant to future subscribers. \TODO{this doesn't motivate \emph{unordered}
-multisets}
-\end{comment}
-
-Normally, publishers are not buffered, meaning subscribers will
+Our publishers are not buffered, meaning subscribers will
 not receive any data which was produced before they subscribed to a certain
 topic. This is the same as in many other publish/subscribe systems, where
 synchronization between publishers and subscribers is decoupled as well. \cite{pubsub}
 
 However, in streams where the contents of the stream describes changes of a certain
 state, it is essential for stream consumers to know the state of the source at
-the beginning of the stream in order to make sense out of it.
+the beginning of the stream in order to make sense out of it. The motivating
+example here is the catalog, which is supposed to expose the current system state to
+new participants.
 
-For this reason, we introduce a different kind of publisher which publishes
-\emph{collections} instead of streams. A collection is a typed, unordered
+For this reason, we introduce a second kind of publisher which publishes
+\emph{collections} instead of streams. A collection in our model is a typed, unordered
 multiset maintained by the publisher, possibly representing state it would
 like to share with subscribers.
 
 Upon creation, a collection publisher contains an empty collection.
 When the publishing query mutates the collection by adding or removing elements,
 these changes are propagated to the subscribers. When new subscribers connect
-to this publisher, they will initially receive a list of all currently contained
-elements. This way, all subscribers eventually maintain the same view of the
-data collection.
+to this publisher, the publisher will provide them with a list of all currently
+contained elements. This way, all subscribers eventually maintain the same view
+of the data collection.
 
 From the subscribers point of view, a topic published by a collection publisher
 is not inherently different from a normal topic: After subscribing, it will
 observe a continuous stream of data. The difference is in the data type of the
 stream, it will be of tuples of the format $(\texttt{Data}, \delta)$, where
 \texttt{Data} is an element that can be stored in the multiset and $\delta$ 
-denotes the amount of elements that have been added or removed from the set.
-This format
-is compatible with the notion of collections in Differential Dataflow, allowing
-subscribing queries to further process the collection in a convenient manner.
+is a signed integer denoting the amount of elements that have been added or removed from the set.
+This format is compatible with the notion of collections in Differential Dataflow \cite{differential},
+allowing subscribing queries to further process the collection in a convenient
+manner. Note however that our collections are not versioned, we
+do not append timestamps to the update messages.
 
 \subsection{Subscriber}
 
@@ -313,36 +311,24 @@ be blocking: If a requested topic does not yet exist, the coordinator will add
 the subscriber to a wait list. Once a corresponding topic is published under that
 name, the coordinator will inform the subscriber about this topic. 
 
-The subscribing query might use different timestamps in its dataflow graph
-than the publisher, thus it is the subscribers responsibility to re-add
-timestamps to the received stream. 
+The subscribing query is free to subscribe to multiple topics. It the queries
+responsibility to feed the data streams into the dataflow graph.
 
-\subsection{Alternative Approaches}
+\subsection{Comparison with Timely's Capture \& Replay Operators}
 
-\subsubsection{Capture \& Replay Operator}
-
-The Timely library also offers the capture and replay operators which serve the
+The Timely library provides special capture and replay operators which also serve the
 purpose of sharing data between queries. With the capture operator, all timestamp,
 data and event records are collected and stored in one dataflow computation,
 and can then be replayed in another one.
 
-The implementation of the replay operator requires it to use the same timestamps
-as the capture operator, forcing both queries to have a similar structure
-in their dataflow graph, as a timestamp received at an operator is defined
-by its surrounding scope. Another feature of the capture/replay operator pair
-is that they will replay the whole stream from beginning to end, requiring the
-capture operator to either buffer its incoming data or wait for the replaying
-query to connect to it. 
+The capture/replay operators will record and replay the whole stream from beginning
+to end, requiring the capture operator to either buffer its incoming data or
+wait for the replaying query to connect to it. 
+In our system, we opted for a more dynamic approach, where
+producing queries are allowed to discard data if there are no consumers.
 
-Both these requirements stem from the fact that the replay operator not only
-replays the data stream, but also all progress tracking events, including
-notifications. In our system, we opted for a more dynamic approach, where
-producing queries are allowed to discard data if there are no consumers, and
-where consumers use the streams as inputs for their own computation,
-allowing them to assign their own timestamps to the data stream.
-
-It is the user's task to provide a communication channel between capture and 
-replay operators. Common channel include Rust's thread-safe FIFO queues or
-TCP sockets. In general it can be said the capture/replay operators result
-in a more tightly coupled system than publish/subscribe pairs.
+It is the responsibility of the user to provide a communication channel between
+capture and  replay operators. Adapters exist for Rust's thread-safe FIFO queues,
+and anything which implements Rust's I/O interface, such as file handles or 
+TCP sockets.
 
