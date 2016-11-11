@@ -5,7 +5,7 @@ computations. It provides two main services which we discuss separately:
 First, deployment and execution of user-submitted Timely programs, and secondly,
 sharing of data streams between running timely dataflow computations.
 
-\section{Overall architecture}
+\section{Overall Architecture}
 
 Our system consists of multiple components which we briefly describe here:
 A dataflow program submitted to run as part of the system is
@@ -193,7 +193,7 @@ be removed from the system while the queries spawned by the executor are still
 running. In this case, the coordinator removes the terminating executor from
 the pool, disallowing any future queries to be hosted on the removed executor.
 
-\paragraph{Future considerations}
+\paragraph{Future Considerations}
 
 The current implementation of executors which run queries in their own separate
 process is not the only possible implementation choice.
@@ -206,7 +206,7 @@ of multiple worker threads within a single operating system thread could also
 be implemented for certain queries where its input is managed by the system.
 
 
-\section{Sharing data streams} \label{sec:sharingstreams}
+\section{Sharing Data Streams} \label{sec:sharingstreams}
 
 Dataflow programs typically work on streams from external sources. As the same
 data source might be of interest for different dataflow computations, it seems
@@ -256,7 +256,7 @@ actual exchange of data happens directly between queries. When a query subscribe
 to a topic, it receives the address of the topic's publisher from the coordinator
 and directly connects to it.
 
-\subsection{Stream publisher}
+\subsection{Stream Publisher}
 
 A stream publisher is a Timely operator which exposes a Timely stream as a topic. When
 creating it, the query author has to assign a name for the topic under which the
@@ -267,7 +267,7 @@ if each worker publishes its own topic. The latter option implicitly exposes
 the data sharding strategy of the publishing query, allowing the workers of
 the subscribing query to exploit this partition scheme.
 
-\subsubsection{Collection publisher}
+\subsubsection{Collection Publisher}
 
 Our publishers are not buffered, meaning subscribers will
 not receive any data which was produced before they subscribed to a certain

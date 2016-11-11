@@ -12,7 +12,7 @@ some overhead in both memory consumption and processing latency. The goal
 of this chapter is to measure and analyze the overhead of query composition
 on a realistic workload.
 
-\paragraph{Experimental setup}
+\paragraph{Experimental Setup}
 
 All experiments are executed on a dual-socket Intel Xeon E5-2650
 machine (2.0GHz, 8 cores per socket, 2 threads per core) with 64 GB RAM. All components and
@@ -25,7 +25,7 @@ via iSCSI on a private 10 Gbit Ethernet network.
 The dataflow computation in this experiment is based on \emph{sessionization},
 i.e. the reconstruction of user sessions from a trace of log events.
 
-\subsection{Computation \& workload}
+\subsection{Computation \& Workload}
 
 The workload in this experiment is an hour-long trace of log events, collected in
 a large datacenter owned by an provider for the travel industry. The messages in our trace were
@@ -49,7 +49,7 @@ This not only simplifies the experimental design and ensures reproducibility,
 it also allows us to explore the behavior of the system if there are only a
 few worker threads.
 
-\subsection{Dataflow graph}
+\subsection{Dataflow Graph}
 
 Input is read from disk and fed into the dataflow graph in parallel, each worker
 is responsible for a partition of the log servers. The read messages are sent
@@ -95,9 +95,9 @@ communicating with each other.
   \label{fig:split}
 \end{figure}
 
-\subsubsection{Splitting up the dataflow graph}
+\subsubsection{Splitting the Dataflow Graph}
 
-For this evaluation we split up the computation such that each stage represents
+For this evaluation we split the computation such that each stage represents
 its own sub-query. In order to achieve this, we introduce two topics: The topic
 \emph{sessionize} contains the result of the sessionization stage, i.e. 
 the groups of messages belonging to a session. The second topic, named
@@ -106,7 +106,6 @@ It emits a stream containing all the transactions per session. The resulting
 modular dataflow graph is shown in Figure~\ref{fig:split}, it consists of
 seven queries, each one running in its own operating system process.
 
-
 \paragraph{Topic Partitioning}
 
 We maintain a simple one-to-one mapping between the number of topics and
@@ -114,7 +113,7 @@ number of worker threads in both the publishers and the subscribers.
 Merging the stream partitions for publication and redistributing
 the data at each subscriber would just result in unnecessary work.
 
-\subsection{Worker-to-processor mapping}
+\subsection{Worker-to-Processor Mapping}
 
 We use the same amount of workers for each query to simplify topic partitioning.
 But because the modular version naturally consists of more than one query,
@@ -140,7 +139,7 @@ threads between the available cores.
 
 \section{Results}
 
-\subsection{Overhead in execution time}
+\subsection{Overhead in Execution Time}
 
 We report the overall execution time of of both the monolithic and the 
 modular query for different amounts of worker threads in Figure~\ref{fig:times}.
@@ -185,7 +184,7 @@ overhead is not proportional to the number of worker threads. We will show
 in section~\ref{sec:evalnuma} that other factors such as placement also
 impact the overhead.
 
-\subsection{Worker utilization factor}
+\subsection{Worker Utilization Factor}
 
 In this section we present the average measured utilization \emph{per worker},
 i.e. the proportion of time a worker thread performs useful work.
@@ -238,7 +237,7 @@ Figures \ref{fig:rss} and \ref{fig:cpu} report the processor utilization and pea
 memory consumption for the different processes, as reported by the operating
 system.
 
-\paragraph{Memory consumption}
+\paragraph{Memory Consumption}
 
 We immediately see that the sessionization query of the composed version
 consumes the most memory. This is caused by the fact that the re-ordering
@@ -254,7 +253,7 @@ operating system processes, each one with a large set of worker threads.
 \TODO{maybe split the figure in two separate figures, one for the subscribers
 and one for sessionization}
 
-\paragraph{Processor utilization}
+\paragraph{Processor Utilization}
 
 We also report the overall processor utilization reported by the operating system.
 A value of 100\% would correspond to the full utilization of all 32 logical cores.
@@ -292,7 +291,7 @@ also see that the sessionization stage is the most compute heavy.
     \label{fig:cpu}
 \end{figure}
 \clearpage
-\subsection{Impact of worker placement} \label{sec:evalnuma}
+\subsection{Impact of Worker Placement} \label{sec:evalnuma}
 
 In the above experiments, we prefer running as many workers as possible
 on a single processor socket (with the exception of hyper-threads).

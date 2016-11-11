@@ -5,7 +5,7 @@ presented in the previous chapter. We also present some shared implementation
 features, such as the common request/response protocol used for the
 communication between the different components and the coordinator.
 
-\section{Query library}
+\section{Query Library}
 
 We provide a small wrapper library which allows submitted Timely programs to participate
 in our system. The library performs the initialization of the dataflow computation,
@@ -90,7 +90,7 @@ to a central request handler. This request handler contains the central logic
 of the coordinator, keeps track of unfulfilled requests and informs the
 catalog to announce changes in the system state.
 
-\subsection{Dealing with asynchronous events}
+\subsection{Dealing with Asynchronous Events}
 The initial prototype of the coordinator used a multi-threaded approach for dealing
 with multiple clients at the same time, and used message passing between threads
 to avoid directly exposing shared state. However, many requests handled by
@@ -124,7 +124,7 @@ polled. This is typically done by registering the future in an event loop,
 which will repeatedly wait for events to occur before polling its registered
 futures.
 
-\subsubsection{Event loop}
+\subsubsection{Event Loop}
 The \lstinline{future-rs} library itself only provides a set of primitives to
 create and combine futures, it also provides abstractions for expressing which
 events a future is waiting for, and expressing the occurrence of events, it
@@ -149,6 +149,7 @@ Each connection itself then maintains a queue for incoming requests, which is
 also modeled as a future, allowing the user to specify actions to be taken
 once a request is received.
 
+\begin{figure}[h]
 \begin{lstlisting}[caption={[Connection handling at the coordinator]%
 Accepting and dispatching incoming connections. The actions specified
 in \lstinline{for_each} and \lstinline{map_err} are invoked by the
@@ -178,6 +179,7 @@ let server = listener.for_each(|connection| {
 // drive the event loop to completion
 async::finish(server);
 \end{lstlisting}
+\end{figure}
 
 \subsubsection{Futures for Blocking Requests}
 
@@ -240,7 +242,7 @@ impl RequestHandler {
 \end{lstlisting}
 \end{figure}
 
-\subsection{Maintaining shared mutable state}
+\subsection{Maintaining Shared Mutable State}
 
 The nature of the coordinator requires it to mutate its internal state on
 behalf of the connected clients. As the Rust programming language discourages
@@ -274,11 +276,12 @@ request handler in order to fulfill certain requests.
 
 
 
-\subsection{Publishers \& subscribers} \label{sec:pubsubimpl}
+\subsection{Publishers \& Subscribers} \label{sec:pubsubimpl}
 
 The query library exposes the publish and subscribe functionality. The following
 API is used for publishing and subscribing to Timely streams.
 
+\begin{figure}[h]
 \begin{lstlisting}[caption={[Publish \& subscribe interface]
 The interface for publishing and subscribing Timely streams.
 }]
@@ -299,6 +302,7 @@ impl Coordinator {
             D: Data + NonStatic;
 }
 \end{lstlisting}
+\end{figure}
 
 The \lstinline{NonStatic} bounds on the data and timestamp
 parameters are required for safe serialization described in \ref{sec:serialization}.
@@ -320,6 +324,7 @@ shall be merged into a single topic, of if every worker publishes its own stream
 In the second case, the identifier of the publishing worker is appended to the
 name of the topic:
 
+\begin{figure}[h]
 \begin{lstlisting}[caption={
 Example use of publisher.
 }]
@@ -343,9 +348,10 @@ timely_query::execute(|root, coord| {
     });
 })
 \end{lstlisting}
+\end{figure}
 
 
-\paragraph{Collection publisher}
+\paragraph{Collection Publisher}
 
 In addition to the stream publisher, we also provide the so called collection
 publisher. It has a similar interface for publishing, but it requires the
@@ -374,7 +380,7 @@ from subscribers and provides notifications for disconnected clients.
 
 
 
-\paragraph{Implementation details}
+\paragraph{Implementation Details}
 
 
 Internally, this logic also make use of the \lstinline{future-rs} library, 
@@ -420,6 +426,7 @@ subscription handle will automatically derive new capabilities for incoming
 data and drop old ones if the frontier advances. The user however has to
 provide the initial root capability for the input.
 
+\begin{figure}[h]
 \begin{lstlisting}[caption={[Typical use of the subscription handle]
 Typical use of the subscription handle. This query subscribes to a single topic of
 strings, with \lstinline{u64} being the type of the timestamps.
@@ -442,6 +449,7 @@ timely_query::execute(|root, coord| {
     }
 })
 \end{lstlisting}
+\end{figure}
 
 In queries which use multiple workers, the query author can programmatically
 encode which workers subscribe to which topics, as the code outside the

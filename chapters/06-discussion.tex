@@ -2,11 +2,11 @@
 
 \section{Related Work}
 
-\subsection{Dataflow streaming engines}
+\subsection{Dataflow Streaming Engines}
 
 In contrast to the standalone Timely Dataflow library, many state-of-the-art
 dataflow streaming engines have been designed and engineered from the start
-to run multiple current dataflow computations in a cluster. One of the
+to run multiple concurrent dataflow computations in a cluster. One of the
 goals of this thesis was to provide such functionality for Timely Dataflow
 based programs. Thus, in this section, we will mainly focus on the execution
 and management aspect running multiple concurrent dataflow computations. Less focus is
@@ -36,7 +36,7 @@ Timely's continuous operator model. In Timely, both the operator scheduling
 and the data of the computation are managed directly by the workers themselves,
 which are hosted by long living operating system processes. In Spark however,
 the data and code is managed by the system. Because of this, Spark is not only
-able provide strong fault tolerance by reissuing failed computations, Spark
+able to provide strong fault tolerance by reissuing failed computations, Spark
 is also able to load balance concurrently running streams and mitigate stranglers.
 While we currently do not offer these features, Timely does achieve much lower
 latencies than Spark Streaming, which is mostly enabled by the fact that every
@@ -58,8 +58,8 @@ strategy between them.
 
 The process model of Storm is very similar to our approach: A topology
 (roughly corresponding to a query in our system) is executed by multiple
-\emph{worker processes}. These are operating system processes which distributed
-over different machines, thus similar to our query proceses. Every machine hosts
+\emph{worker processes}. These are operating system processes which are distributed
+over different machines, thus similar to our query processes. Every machine hosts
 a \emph{supervisor}, which not only monitors the local worker processes, but also spawns new worker
 processes on behalf of the \emph{Nimbus}, making Storm's supervisors similar to our executors.
 The Nimbus is a central process to which new topologies are submitted, mirroring our coordinator.
@@ -103,22 +103,25 @@ they provide access to computational resources and are distributed over
 potentially multiple machines. Like our executors, they can be dynamically added and announce themselves at the
 job manager. However, in contrast to our executors, task managers directly execute the
 operators and manage any data exchange between them. In our system, this task is done by the
-query library in in conjunction with the Timely runtime.
+query library in conjunction with the Timely runtime.
 
 For resource management purposes, each task manager provides
 a predefined number of task slots. These typically correspond with the number of CPU cores,
 though it is not enforced that a slot only uses one thread. The available memory is also distributed
-equally between the task slots of an task manager. The submitted dataflow computation is split up
+equally between the task slots of a task manager. The submitted dataflow computation is split up
 in multiple subtasks (one subtask typically corresponding to one operator), and each subtask is assigned
 to a task slot. Subtasks from the same submission can share a task slot
 if the operator supports it. This is used for example for pipelined operators which don't
 require any exchange of data with operators running in other task slots.
 Because task managers can have multiple task slots, they can run operators from different
 computations within the same operating system process, similar to Spark Streaming.
-Unlike Spark Streaming however, these operators are however continuous and
+Unlike Spark Streaming however, these operators are continuous and
 do not migrate to other task slots during normal operation.
 
-\subsection{Dataflow composition}
+\subsection{Sharing Dataflow Streams}
+
+In this section we discuss how composition of different dataflow streams 
+can be achieved in other systems.
 
 \subsubsection{Kafka}
 
@@ -155,7 +158,7 @@ to backpressure issues if the subscribers are slow.
 \paragraph{Kafka Streams}
 In additions to the above mentioned adapters, Kafka also provides its own
 streaming engine called Kafka Streams. It provides a simple acyclic dataflow
-model which uses Kafka topics and sources and sinks, thus acting as transformers.
+model which uses Kafka topics as sources and sinks, thus acting as transformers.
 Parallelism is achieved by instantiating the dataflow graph on multiple threads.
 Partitioning of the data happens before it is fed to the individual instances
 of the dataflow graph.
@@ -189,7 +192,7 @@ needs to provide a key extraction function for each of its input streams.
 
 Computations run on one or more processes distributed over a dynamic set of
 machines. The assignment of computations to machines and keys to computations
-is managed by the system it self. Because the system manages persistent state
+is managed by the system itself. Because the system manages persistent state
 on behalf of the computations, computations for a certain key can be moved
 for load-balancing or restarted in the case of failures.
 
@@ -217,8 +220,6 @@ process
 \chapter{Future Work \& Conclusions} \label{ch:future}
 
 \section{Future Work}
-
-
 
 \subsection{Extracting the Dataflow Graph from Queries}
 
@@ -260,7 +261,7 @@ preliminary ideas.
 
 We believe that it would be relatively easy to instrument Timely such
 that it exposes its data streams for later use without much run-time
-overhead: Timely's stream handle internally maintains an registrar which
+overhead: Timely's stream handle internally maintains a registrar which
 is used by succeeding operators to register themselves as consumers.
 When data is sent to an operator's output, the data is pushed one by one into the
 queues of the consumers that have registered themselves on that output. By collecting and exposing
@@ -295,7 +296,7 @@ of this is dataflow path deduplication: If a new incoming query performs the sam
 sequence of operations on the same stream of data as an already existing
 query, we would like to deduplicate this work. By exploiting the fact that
 topics act as semantic descriptions of streams, the system could automatically
-tap into dataflow edges on the outgoing path of an publiction in order to
+tap into dataflow edges on the outgoing path of a publication in order to
 optimize the subscriptions of submitted queries. Such an optimization however
 requires that the system is able to compare the semantics of operators,
 i.e. it needs to be able to determine if two operators are equivalent. It
@@ -324,26 +325,29 @@ An example of such an optimization is shown in Figure~\ref{fig:queryoptimization
 \subsection{Resource Management}
 
 For the most part, resource management is still an unresolved problem in our
-current system. It is the responsibility of the user to select which executors
-will host a new query submission. 
+current system. One aspect of this is the placement of queries on the available
+executors. It is currently the responsibility of the user to select which executors
+will host a new query submission.
 The reason for this is that system does not know what conditions have to be
 fulfilled in order to execute the query:
 The query might access external files or other resources which are currently not
-expressed the system model in the catalog.
+expressed in the system model through the catalog.
 
 However, in many cases automatic placement of queries might be desired. Future
 work would have to explore what kind of information a query placement scheduler
 requires to perform well, and extending executors or other components to collect
-this kind information.
+this kind of information.
 
 Another aspect of resource management is resource control. Once a placement
 for a query has been selected, the responsible executors might want to ensure
 that the available resources are distributed fairly among the
 running queries. Currently, CPU and memory usage of queries is solely managed
-by the operating system. The use operating system features such as
+by the operating system. The use of operating system features such as
 Linux \emph{control groups} \cite{cgroups} could be added to more precisely indicate
 to the operating system what kind of resources certain queries should have
-access to. Because queries can run arbitrary code and might not be trusted,
+access to.
+
+Because queries can run arbitrary code and might not be trusted,
 future work might also want to investigate sandboxing or other protection
 techniques to further isolate queries from each other and the underlying operating
 system.
@@ -357,9 +361,13 @@ subscriber is slower than the publisher, as its queue will grow and thus
 memory consumption increase. Future work has to explore how to throttle
 the publishing query in such situations. One possible approach would be the
 addition of probes which indicate the subscribers progress. These would then
-be used to throttle the input of the publishing query. Tightly coupled queries
-can already implement such an approach today, as our system allows two queries
-to subscribe to each other: Besides the topic published by the producer and
+be used to throttle the input of the publishing query. Previous work \cite{faucet} has
+successfully demonstrated the use of such a flow control mechanism within the
+scope of a single query, future work would have to explore how to integrate
+this with our system.
+
+Tightly coupled queries can already implement such an approach today, as our
+system allows two queries to subscribe to each other: Besides the topic published by the producer and
 read by the consumer, there would be an additional second topic published by the
 consumer and read by the producer used as a back channel for progress probing.
 
@@ -369,8 +377,10 @@ This would reduce memory pressure in the presence of slow subscribers and it
 would also allow late subscribers to replay the whole data stream, if such
 a feature is desired.
 
-Intermediate buffers could also be used to reduce network traffic, by having
-subscribers read their data from local buffers instead remote publishers.
+Intermediate buffers could also be used to reduce network traffic if many
+co-located subscribers consume data from same remote publisher: By having
+subscribers read their data from local buffers instead of the remote publisher,
+data would only have to be sent once over the network.
 
 \subsection{Partitioning and Filtering by Subscribers}
 
@@ -378,7 +388,7 @@ In our current system, the partitioning scheme of published streams is
 determined by the publishers, which either publishes one topic per worker or
 a single topic for all workers. If a subscribing query uses a different amount
 of workers than there are available topics, the query author of the subscribing
-query has to manually distribute the these topics among the query's workers.
+query has to manually distribute these topics among the query's workers.
 
 MillWheel by contrast allows subscribers to provide their own partitioning
 functions which are used by the system to automatically decide how data is
@@ -396,3 +406,16 @@ content-based filtering and routing found in other publish/subscribe systems
 
 \clearpage
 \section{Conclusions}
+
+In this work we have presented a system for executing and deploying Timely
+Dataflow programs. In addition to managing the submission of dataflow programs,
+we also provide facilities for these computations to publish their streams
+for consumption by other queries. This functionality is used by the
+system catalog to expose metadata about the current system state, but more
+importantly, it can also be used for query composition.
+
+We demonstrated that query composition can be used to modularize a computation
+based on a realistic workload and show that doing so imposes acceptable costs
+in terms of memory consumption and execution time overhead.
+
+

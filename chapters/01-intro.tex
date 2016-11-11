@@ -26,25 +26,35 @@ builds upon the Rust implementation of the timely dataflow model,
 simply called \textquote{Timely Dataflow}\footnote{We use the capitalized term
 for the implementation, while the model is referred to in lower-case.} \cite{timely}.
 
-Being an embeddable library, the current run-time of Timely Dataflow only
-concerns itself with the execution and scheduling a of single processing job.
-While it does support the distributed execution of a dataflow computation
-over a static set of machines, launching and deployment of the resulting application
-has to be done manually by the user. External inputs are managed
-by the user and fed into the dataflow graph by custom client code.
-
 \section{Contributions}
 
+Being an embeddable library, the current run-time of Timely Dataflow only
+concerns itself with the execution and scheduling of a single processing job.
+This results in a tendency towards large, monolithic dataflow graphs which
+perform many different tasks at the same time. While these monolithic computations
+are highly efficient in terms of resource usage, this comes at a cost with regard
+to maintainability and extensibility. Attaching an additional stage to a monolithic
+dataflow graph cannot be done for an online computation without restarting the
+whole application.
+
+Timely Dataflow supports the distributed execution of a dataflow computation
+on a statically sized cluster. Launching and deployment of the the compiled
+application binary has to be done manually by the user, who has to provide the
+addresses of all participating machines to each process separately.
+
 The goal of this thesis is the design and implementation of a system which
-provides the following features:
+aims to improve the deployment of Timely Dataflow by providing the following
+features:
 
 \begin{itemize}
 \item Handling of the deployment and execution of multiple concurrent dataflow programs.
-\item Providing interfaces for the submission new of dataflow programs.
+\item Providing interfaces for the submission of dataflow programs.
 \item Dynamic addition and limited removal of machines to the cluster.
 \item Managing of data streams consumed and produced by the running dataflow computations.
 \item Allowing system introspection by exposing metadata about the current system state.
 \end{itemize}
+
+% TODO outlook
 
 
 \section{Outline}
