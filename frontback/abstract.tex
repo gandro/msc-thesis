@@ -10,20 +10,21 @@
 
 \chapter*{Abstract}
 
-Online processing of data streams from different sources is an increasingly
-common task in many applications. Running such kind of applications requires
-platforms which not only supervise the deployment and execution of different
+Online processing of data streams is an increasingly
+common task in many applications. This motivates the use of platforms which
+not only supervise the deployment and execution of different
 computational tasks, but also provide mechanisms to manage and share the
 available data streams.
 
-In this thesis, we present a system for managing the submission and execution
-of Timely Dataflow applications. Timely Dataflow is an existing framework for
-writing distributed, data-parallel dataflow programs with support for writing
-iterative and incremental computations. Our system extends Timely Dataflow
+In this thesis, we present the architecture and implementation of a system
+for managing the submission and execution of Timely Dataflow applications.
+Timely Dataflow is an existing framework for writing distributed, data-parallel
+dataflow programs with support for writing iterative and incremental computations.
+Our system extends Timely Dataflow
 with a mechanism for sharing data streams between different dataflow computations,
 enabling the composition of separately submitted programs. We evaluate our system
-by demonstrating it can be used to modularize and and execute an application
-performing statistical processing of reconstructed user-sessions on
+by demonstrating that it can be used to modularize and and execute an application
+which performs statistical processing of reconstructed user-sessions on
 log traces from a large datacenter.
 
 \endgroup

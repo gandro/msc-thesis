@@ -196,26 +196,6 @@ is managed by the system itself. Because the system manages persistent state
 on behalf of the computations, computations for a certain key can be moved
 for load-balancing or restarted in the case of failures.
 
-\begin{comment}
-
-        Timely | Spark | Storm | Heron | Flink | MillWheel
-
-process 
-    Timely: 1 topo per process
-    Spark: 
-
-
-\begin{table}
-    \myfloatalign
-  \begin{tabularx}{\textwidth}{llllll} \toprule
-    \tableheadline{Feature} & \tableheadline{Our System} & \tableheadline{Spark Streaming} & \tableheadline{Storm} & \tableheadline{Heron} & \tableheadline{Flink} & \tableheadline{MillWheel}\\ \midrule
-
-    \bottomrule
-  \end{tabularx}
-  \caption{Summarized comparison of related work}  \label{tab:related-work}
-\end{table}
-\end{comment}
-
 \cleardoublepage
 \chapter{Future Work \& Conclusions} \label{ch:future}
 
@@ -407,10 +387,14 @@ content-based filtering and routing found in other publish/subscribe systems
 \clearpage
 \section{Conclusions}
 
-In this work we have presented a system for executing and deploying Timely
-Dataflow programs. In addition to managing the submission of dataflow programs,
-we also provide facilities for these computations to publish their streams
-for consumption by other queries. This functionality is used by the
+\TODO{rewrite}
+
+In this work we have presented a system for deploying Timely Dataflow applications.
+In addition to managing the submission of dataflow programs for execution
+on a cluster, we also provide facilities for these computations to publish
+their streams for consumption by other queries. 
+
+This functionality is used by the
 system catalog to expose metadata about the current system state, but more
 importantly, it can also be used for query composition.
 

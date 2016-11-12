@@ -7,8 +7,9 @@ communication between the different components and the coordinator.
 
 \section{Query Library}
 
-We provide a small wrapper library which allows submitted Timely programs to participate
-in our system. The library performs the initialization of the dataflow computation,
+As discussed in the previous chapter, queries link against a small wrapper library
+which allows submitted Timely programs to participate in our system.
+This library performs the initialization of the dataflow computation,
 announces its readiness at the coordinator and provides methods for
 publishing and subscribing to topics.
 
@@ -21,7 +22,7 @@ is specified by the user at submission time and directly provided to the query l
 by its hosting executor. The current implementation of the executor passes
 this information down to the query library in environment variables. 
 
-Using this information, the process connects to the coordinator and registers
+Using this information, the query process connects to the coordinator and registers
 itself by providing its identifier and the group of workers it will host. Once
 all worker groups have successfully registered themselves at the coordinator,
 the coordinator replies with a randomized token which is used to associate
@@ -33,38 +34,46 @@ communication channels among them is by the library done using
 in a standalone Timely program. For this reason, our query library needs to
 translate the information provided by the executor into Timely's own format.
 
-
 Our query library provides an interface for worker threads to
 publish or subscribe to topics. For this reason, every worker thread gets
 a handle for the connection to the coordinator. Access to the
 publish \& subscribe system is provided through a set of remote
 procedure call stubs which are described separately in section~\ref{sec:pubsubimpl}.
 
-
 \section{Executor}
 
-The current implementation of the executor is relatively simple. It is an executable
-that registers itself at the coordinator and then spawns child processes on behalf
-of the coordinator.
+The current implementation of the executor is relatively simple, it is a
+process that spawns child processes on behalf of the coordinator, enabling
+the execution of new queries on remote machines.
 
-In order to add a new host to the cluster, the user has to deploy the executor
+In order to add a new machine to the cluster, the user has to deploy the executor
 binary on the new host, specify the address of the coordinator and then launch
-the executor binary. The executor registers itself at the coordinator, which
-assigns a unique identifier to the connecting executor. Once connected to the
+the executor binary. The executor will register itself at the coordinator, which
+in turn assigns a unique identifier to the connecting executor. Once connected to the
 coordinator, the executor listens for incoming spawn requests. If such a
 request arrives, it fetches the binary from the specified source and launches
-it as an operating system process. Any command line arguments to be passed
-to the query are provided here as well.
+it as an operating system process. During submission, the user can specifying
+command line arguments which are provided to the query binary here as well.
 
 The executor has to inform the spawned binary about its assigned query identifier,
 the address of the coordinator and the address of any peer processes. In the
-current implementation this is simply done using environment variables, which
-can easily be accessed by the spawned query.
+current implementation this is simply done by the executor writing this information
+into the environment variables of the spawned query.
 
-% \TODO{talk about the removal of queries}
+The executor currently uses the process spawning functions provided in Rust's standard
+library, which at present offer all features we need, and are available on
+all supported operating systems. As we will discuss in later chapters,
+more sophisticated, platform-specific process control and supervision mechanisms
+could be added in the future.
 
-% TODO talk about error paths
-% TODO talk about supported url formats
+When submitting a new query, the submission must contain an URL to the binary.
+The URL scheme determines how the binary is fetched by the executor. In the
+current implementation, this can either be a filesystem path directly accessible by the
+executor process (e.g. over a shared network folder), or the binary can be provided
+over a raw TCP stream. More advanced download schemes can be easily added in
+the future.
+
+% TODO talk about the removal of queries
 % TODO talk about stdout forwarding
 
 \section{Coordinator}
@@ -74,24 +83,23 @@ set of tasks. These involve handling submission requests to spawn new queries,
 but also handling publication and subscription requests from existing queries.
 It is the central authority on the current system state, i.e. it maintains
 a list of all running queries and executors, but it also tracks all existing
-publications and subscriptions. It exposes this information in the catalog.
+publications and subscriptions. It exposes this information through the catalog.
 
-Because most components interact with the coordinator, its
-internal implementation was not without challenges, such as the
-the fact that it has to deal with many concurrent asynchronous events.
+Because most components interact with the coordinator, its internal implementation
+is not without challenges, particularly when dealing with multiple concurrent events.
 
 Before we discuss the details of its implementation, we provide a
 brief overview of the internal architecture of the coordinator: To other
 components, the coordinator exposes a request/response-based interface on a
-predefined networking port. For this purpose, the coordinator listens for
-incoming connections on that port and then waits for the connected clients
-to send requests. Once requests are received and decoded, they are forwarded
-to a central request handler. This request handler contains the central logic
-of the coordinator, keeps track of unfulfilled requests and informs the
-catalog to announce changes in the system state.
+predefined networking port. It listens for incoming connections on that port
+and then waits for the connected clients to send their requests. Once a request
+is received and decoded, it is forwarded to a central request handler.
+This request handler contains the central logic of the coordinator, keeps
+track of unfulfilled requests, and informs the catalog to announce changes
+in the system state.
 
-\subsection{Dealing with Asynchronous Events}
-The initial prototype of the coordinator used a multi-threaded approach for dealing
+\subsection{Dealing with Asynchronous Tasks}
+Our initial prototype of the coordinator used a multi-threaded approach for dealing
 with multiple clients at the same time, and used message passing between threads
 to avoid directly exposing shared state. However, many requests handled by
 the coordinator require it to wait for external events, and thus a form of
@@ -102,18 +110,19 @@ non-blocking subtasks. However, due to Rust's memory ownership model, we found t
 this approach often resulted in manual \emph{stack ripping} \cite{stackmgmt},
 which made code both hard to read and inconvenient to write.
 
-This motivated us to re-design the coordinator around a central event loop, which
-allows us to multiplex many asynchronous tasks within the same thread. However,
-instead of using raw callbacks as event handlers, we decided to adapt an external
-library called \lstinline{future-rs} \cite{futuresrs}. It provides a more expressive interface
-for dealing with asynchronous tasks based on the concept of \emph{futures}. Futures
-(sometimes called promises, eventuals or deferred objects) are proxy objects for
-values that will eventually be provided through some asynchronous event.
+This motivated us to re-design the coordinator around a central task dispatch loop, which
+allows us to multiplex many asynchronous tasks within the same thread. We decided to adapt
+an external library called \lstinline{future-rs} \cite{futuresrs} for this purpose.
+It provides a expressive interface for dealing with asynchronous tasks based
+on the concept of \emph{futures}. Futures (sometimes called promises, eventuals
+or deferred objects) are proxy objects for absent values, which eventually will
+be provided through some asynchronous event.
 The \lstinline{future-rs} library provides combinators for chaining futures
 together or waiting on multiple futures at the same time. Actions on completed
-futures are expressed as closures. Stack ripping occasionally still occurs
-with these closures, however the fact that the completion handlers are chained together
-allows for more sequentially looking code.
+futures are expressed as closures. This approach does not completely eliminate
+stack ripping, however the fact that the completion handlers are chained together
+allows for much more maintainable and sequentially looking code. Listing~\ref{lst:fnsubscribe}
+shows how futures can be used when executing potentially blocking requests.
 
 A unique aspect of the implementation of \lstinline{future-rs} is that its futures
 need be polled in order to make progress, instead of proactively being called
@@ -124,24 +133,25 @@ polled. This is typically done by registering the future in an event loop,
 which will repeatedly wait for events to occur before polling its registered
 futures.
 
-\subsubsection{Event Loop}
-The \lstinline{future-rs} library itself only provides a set of primitives to
-create and combine futures, it also provides abstractions for expressing which
-events a future is waiting for, and expressing the occurrence of events, it
-does however not provide an implementation of an event loop. Our implementation
-of the coordinator thus provides a simple event loop whose sole task it is
+\subsubsection{Task Dispatcher}
+The \lstinline{future-rs} library itself provides a set of primitives to
+create and combine futures. It also provides abstractions for expressing which
+events a future is waiting for, and expressing the occurrence of events. It
+does however not provide an actual implementation of an event loop. Our implementation
+of the coordinator thus provides a simple task dispatcher whose sole purpose it is
 to wait for events to occur and poll registered futures accordingly.
 
-To avoid having to pass around a handle to the event loop, it stores its 
-list of waiting futures in thread local storage. The public interface consists 
+To avoid having to pass around a handle to the dispatcher, we store its 
+list of pending futures in thread local storage. The public interface consists 
 of two free-standing functions, \lstinline{async::spawn} for registering
-new futures to the event loop, and \lstinline{async::finish} for initializing
-the event loop and waiting for its termination. \lstinline{async::finish} accepts
-also initial the initial future which is used to register further futures in
-the event loop. The motivation for this interface, which arguably looks
-a bit uncommon for an event loop, stems from the fact that we model each
-concurrently running task as a chain of futures, basically treating them as
-coroutines.  
+futures which are to be completed, and \lstinline{async::finish} which initializes
+the dispatcher loop and then waits for its termination.
+\lstinline{async::finish} accepts an initial future which acts as the root task.
+The motivation for the names in this interface comes from the fact that model
+each concurrently running task as a chain of futures, basically treating them as
+coroutines.
+
+\begin{comment}
 
 Listing~\ref{lst:coorddispatch} shows an example of this. Our networking layer
 models the server socket as a future which yields a stream of incoming connections.
@@ -149,7 +159,7 @@ Each connection itself then maintains a queue for incoming requests, which is
 also modeled as a future, allowing the user to specify actions to be taken
 once a request is received.
 
-\begin{figure}[h]
+\begin{figure}[htb]
 \begin{lstlisting}[caption={[Connection handling at the coordinator]%
 Accepting and dispatching incoming connections. The actions specified
 in \lstinline{for_each} and \lstinline{map_err} are invoked by the
@@ -181,15 +191,7 @@ async::finish(server);
 \end{lstlisting}
 \end{figure}
 
-\subsubsection{Futures for Blocking Requests}
-
-Besides using futures for networking events, we also model potentially
-blocking requests such as query submissions or blocking subscriptions on
-topics which have not been registered yet. The corresponding functions in the
-request handler will return a future instead of a immediately available
-result. 
-
-\TODO{Add example code}
+\end{comment}
 
 \begin{figure}[p]
 \begin{lstlisting}[caption={[Handler for blocking subscription requests]
@@ -197,9 +199,8 @@ Example how a future is created for the subscription request. Depending
 on whether it can be served immediately or not, different kinds of futures
 are returned. Bookkeeping for still pending requests is done with completion
 handles. Upon publication of a requested topic, any pending subscriptions will
-be completed by calling \lstinline{lookup.complete()}.}]
+be completed by calling \lstinline{lookup.complete()}.},label={lst:fnsubscribe}]
 struct RequestHandler {
-  // the catalog stores publications and subscriptions
   catalog: Catalog,
   // list of pending lookups
   lookups: HashMap<String, Vec<Complete<Topic, SubscribeError>>>,
@@ -245,20 +246,27 @@ impl RequestHandler {
 \subsection{Maintaining Shared Mutable State}
 
 The nature of the coordinator requires it to mutate its internal state on
-behalf of the connected clients. As the Rust programming language discourages
-the use of aliased directly mutable references, we have to provide a wrapper
-type which allows the connection handlers mutable access to the request handler.
+behalf of the connected clients. This means that we have to provide each
+connection handler with mutable access to the central request handler. 
+In addition to this, we also want to keep track of the requests submitted by
+each connection, so we can clean up any associated global state if a connection
+disappears.
 
-Because all requests originating from a certain connection are issued using a
-wrapper, we can use it to keep track of the requests submitted by that connection.
-This allows us to clean up any associated state if the connection disappears,
-such as removing disconnected executors from the pool, or depublishing 
-topics of crashed workers.
+For this reason, we provide a wrapper type for accessing the methods of the
+request handler. For each connection, this proxy maintains a simple list of
+identifiers for objects that are conceptually owned by the connection, ensuring that the state is
+remove from the catalog once the connection drops. Examples of this are the removal
+of disconnected executors from the catalog, or the depublication of topics
+owned by crashed queries. The proxy object internally uses Rust's
+\lstinline{RefCell<T>} type to dynamically ensure the strict language
+rules on shared mutability.
+
+\clearpage
 
 \subsection{Catalog}
 
 The purpose of the catalog is to maintain and expose the current state of the
-system. It tracks the addition or removal of executors, queries, topics,
+system. It tracks the addition and removal of executors, queries, topics,
 publication and subscriptions and exposes them in collection topics according
 to the schema shown in Figure~\ref{fig:model}.
 
@@ -272,18 +280,20 @@ to the schema shown in Figure~\ref{fig:model}.
 \end{figure}
 
 The catalog itself only exposes this data. It is mutated and queried by the
-request handler in order to fulfill certain requests.
+request handler in order to fulfill the submitted requests.
 
 
-
+\clearpage
 \subsection{Publishers \& Subscribers} \label{sec:pubsubimpl}
 
 The query library exposes the publish and subscribe functionality. The following
 API is used for publishing and subscribing to Timely streams.
 
-\begin{figure}[h]
+\begin{figure}[htb]
 \begin{lstlisting}[caption={[Publish \& subscribe interface]
 The interface for publishing and subscribing Timely streams.
+The \lstinline{NonStatic} bounds on the data and timestamp
+parameters are required for safe serialization described in \ref{sec:serialization}.
 }]
 pub struct Coordinator {
   /* hidden handle to request queue */
@@ -291,7 +301,7 @@ pub struct Coordinator {
 
 impl Coordinator {
   pub fn publish<S, D>(&self, name: &str, stream: &Stream<S, D>,
-    partition: Partition) -> Result<Stream<S, D>, PublicationError>
+    part: Partition) -> Result<Stream<S, D>, PublicationError>
       where D: Data + NonStatic, 
             S: Scope,
             S::Timestamp: NonStatic;
@@ -304,29 +314,29 @@ impl Coordinator {
 \end{lstlisting}
 \end{figure}
 
-The \lstinline{NonStatic} bounds on the data and timestamp
-parameters are required for safe serialization described in \ref{sec:serialization}.
-
 \subsubsection{Publisher}
 
 The \lstinline{publish} function takes a direct reference to a Timely
 \lstinline{Stream<S, D>}. These stream handles, which are only available during
 the dataflow graph construction phase, allow us to instantiate our own publish
-operator on the stream.  The instantiated publish operator will push both, its
-incoming data, as well as its current frontier to any subscribers. 
+operator on the stream.  The instantiated publish operator will push its
+incoming data as well as its current frontier to any subscribers. 
 
 Once the operator is inserted into the dataflow graph, the \lstinline{publish}
 stub issues a registration request to the coordinator, which will result in the
 creation of a topic for other queries to subscribe to.
 
-The \lstinline{partition} argument on the API specifies whether all streams
+The partitioning argument on the API specifies whether all streams
 shall be merged into a single topic, of if every worker publishes its own stream.
+Merging of the stream is done using Timely's partitioning functions. 
 In the second case, the identifier of the publishing worker is appended to the
-name of the topic:
+name of the topic. 
 
-\begin{figure}[h]
+\vspace{5em}
+
+\begin{figure}[h!]
 \begin{lstlisting}[caption={
-Example use of publisher.
+Example how topics can be published in partitions. 
 }]
 timely_query::execute(|root, coord| {
     root.scoped::<u64, _, _>(|scope| {
@@ -342,14 +352,13 @@ timely_query::execute(|root, coord| {
         let primes = numbers.filter(|x| x.is_prime());
 
         // results in a single merged topic called "primes",
-        // published by worker number 0
+        // published by worker with index 0
         coord.publish("primes", &primes, Partition::Merge)
              .expect("failed to publish topic");
     });
 })
 \end{lstlisting}
 \end{figure}
-
 
 \paragraph{Collection Publisher}
 
@@ -375,36 +384,35 @@ Internally, the publisher maintains a copy of this collection. This is required
 for new subscribers, which must be informed about the contents of the collection
 when they connect.
 
+\paragraph{Implementation Details}
+
 Both publishers share the same underlying logic which accepts incoming connections
 from subscribers and provides notifications for disconnected clients.
 
-
-
-\paragraph{Implementation Details}
-
-
 Internally, this logic also make use of the \lstinline{future-rs} library, 
-since futures have also been integrated in our networking layer. A unique
-aspect of the futures provided by \lstinline{future-rs} is that they need
-be polled in order to make progress.
-
-Inside the coordinator the polling is done by its event loop. For the futures
+since futures have also been integrated in our networking layer.
+Inside the coordinator the polling is done by the task dispatcher. For the futures
 inside our publish and subscribe operators however we make use of the fact
-that Timely itself also uses polling-based scheduling. This guarantees that
-the surrounding Timely operator is polled regularly, enabling it to poll
-the contained futures for completion.
+that Timely itself also uses polling-based scheduling. Every time the publish operator
+is scheduled by Timely, it can poll the networking layer to be informed
+about newly accepted or disconnected subscribers.
+
+Note that even though each subscription request is disclosed to the coordinator
+by subscribing queries, publishers are not informed by the coordinator about new subscribers. Publishers
+see new subscribers only once they connect to the publisher's network socket. 
+The information stored in the catalog is only exposed for inspection by the user.
 
 \subsubsection{Subscriber}
 
-In contrast to the publisher, the current implementation of the \lstinline{subscribe}
+In contrast to the publisher, the current implementation of the \lstinline{sub\-scribe}
 function does not directly instantiate a Timely operator, but returns a subscription
 handle which is used to read data from the topic.
 
 There are two reasons for this choice: First, Timely requires that an operator
 is instantiated on every worker, such that all instances of the dataflow graph
 are identical. However, the amount of topics a query would like to subscribe
-to and the amount of workers it allocates might not match. Thus, the API
-quickly becomes complicated, as we would need to provide an way for the 
+to, and the amount of workers it allocates might not match. Thus, the API
+quickly becomes complicated, as we would need to provide a way for the 
 query author to map topics to operator instances.
 
 Second, Timely's operator contract requires that an operator instance announces
@@ -426,7 +434,7 @@ subscription handle will automatically derive new capabilities for incoming
 data and drop old ones if the frontier advances. The user however has to
 provide the initial root capability for the input.
 
-\begin{figure}[h]
+\begin{figure}[htb]
 \begin{lstlisting}[caption={[Typical use of the subscription handle]
 Typical use of the subscription handle. This query subscribes to a single topic of
 strings, with \lstinline{u64} being the type of the timestamps.
@@ -457,7 +465,7 @@ graph generation is allowed to conditionally decide if and how it wants to call
 the subscribe function. This functionality is required as there is not
 always a one-to-one mapping between published topics and workers at the
 subscribing query, and expressing the assignment in arbitrary Rust code
-give the most flexibility to the query author.
+gives the most flexibility to the query author.
 
 Because the root capability can be cloned, this interface also allows the user to
 interleave the data from a topic with other data, for example by merging
@@ -476,7 +484,7 @@ and are communicating with each other. In order to deal with the inherent
 complexity of such a system, we adopted an actor-model like approach for our
 implementation.
 
-% TODO expand on actors
+\TODO{this actor definition seems confusing}
 
 Actors in our system include processes like the coordinator, the executors 
 and the query processes. However, as Timely by itself could be seen as an

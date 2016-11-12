@@ -28,7 +28,7 @@ for the implementation, while the model is referred to in lower-case.} \cite{tim
 
 \section{Contributions}
 
-Being an embeddable library, the current run-time of Timely Dataflow only
+Being an embeddable library, the current runtime of Timely Dataflow only
 concerns itself with the execution and scheduling of a single processing job.
 This results in a tendency towards large, monolithic dataflow graphs which
 perform many different tasks at the same time. While these monolithic computations
@@ -37,14 +37,16 @@ to maintainability and extensibility. Attaching an additional stage to a monolit
 dataflow graph cannot be done for an online computation without restarting the
 whole application.
 
-Timely Dataflow supports the distributed execution of a dataflow computation
-on a statically sized cluster. Launching and deployment of the the compiled
-application binary has to be done manually by the user, who has to provide the
+While Timely Dataflow does support the distributed execution of a dataflow computation
+on a statically sized cluster, launching and deployment of the the compiled
+application binary has to be done manually by the user: They have to provide the
 addresses of all participating machines to each process separately.
 
-The goal of this thesis is the design and implementation of a system which
+The contribution of this thesis is the design and implementation of a system which
 aims to improve the deployment of Timely Dataflow by providing the following
 features:
+
+- 
 
 \begin{itemize}
 \item Handling of the deployment and execution of multiple concurrent dataflow programs.
@@ -54,8 +56,7 @@ features:
 \item Allowing system introspection by exposing metadata about the current system state.
 \end{itemize}
 
-% TODO outlook
-
+\TODO{sketch how this is relevant}
 
 \section{Outline}
 

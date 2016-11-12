@@ -9,7 +9,7 @@ model} introduced by Naiad \cite{naiad}.
 Timely Dataflow is a framework for writing dataflow programs. Dataflow programming
 is a programming model in which the computation can be represented as a directed graph:
 The data flows along edges, while the computational logic in the vertices transforms it.
-In Timely Dataflow, the vertices are also called operators, and the edges connecting
+Vertices are also called operators in Timely Dataflow, and the edges connecting
 them are called streams. Notable features of the timely dataflow model in comparison
 to many other dataflow systems are its support for structured loops, stateful
 vertices and the option for vertices to be notified if given input rounds of
@@ -27,13 +27,13 @@ The progress tracking algorithm of Timely Dataflow is able to provide these
 guarantees with minimal synchronization, allowing the computation on different
 machines to advance asynchronously.
 
-Dataflow graphs in Timely Dataflow are hierarchically structured, allowing
-nested subgraphs, called scopes. A subscope can define its own clock
-domain, where the timestamps of the inner scope are appended to the timestamps of messages
+Nested subgraphs, called scopes, allow for a hierarchically structured dataflow graph. 
+A subscope can introduce a new own clock domain, where the timestamps of the inner scope are appended to the timestamps of messages
 entering from outer scopes. When messages leave a subscope, the inner 
-timestamp is stripped. Consequently, Timely implements these scoped timestamps
-as product types, with the partial order derived from the combined elements.
+timestamp is stripped. Time\-ly implements scoped timestamps as product types,
+with the partial order derived from the combined elements.
 
+\clearpage
 \subsection{Data-Parallelism}
 
 Timely employs a data-parallel approach for scaling the computation. In the
@@ -48,7 +48,7 @@ hosted on a different worker.
 
 This distribution of work can result in messages being delivered out of
 order. This motivates Timely to provide the progress tracking mechanism
-described below, which allows operators to be argue about globally
+described below, which allows operators to argue about globally
 outstanding messages.
 
 \subsection{Progress Tracking}
@@ -62,7 +62,7 @@ $S_F = \{ t_s \mid \exists t_f \in F: t_s \geq t_f \}$ -- any future message mus
 have a timestamp that is greater or equal than any timestamp in the frontier.
 The frontier itself is a subset of non-comparable timestamps (i.e. an antichain)
 $F = \{t_1, t_2, \dots, t_n \in T \mid  t_i \parallel t_j \}$, where
-$T$ is the clock domain of the input.
+$T$ is the clock domain of the input stream.
 
 Operators must ask the system to be notified when the frontier advances. This
 is typically done by asking for notification about the progress of messages with
@@ -73,21 +73,23 @@ or equal than $t$.
 
 In order not to break notification semantics, operators are only allowed to
 produce messages with a timestamp greater than or equal to $t$ if they hold a
-capapility for timestamp $t$. Operators can obtain capabilities for a certain
+\emph{capability} for timestamp $t$. Operators can obtain capabilities for a certain
 timestamp either during initialization of the system, or if they receive a
 message of the given timestamp.
-
+\clearpage
 \section{Implementation}
 
 The implementation of Timely Dataflow consists of two separate Rust libraries,
-the \lstinline{time\-ly} crate which implements all functionality related to
+the \lstinline{time\-ly} library which implements all functionality related to
 dataflow graph construction and progress tracking, while a second library
 called \lstinline{time\-ly_\-com\-mu\-ni\-ca\-tion} implements the creation and
 initialization of worker threads and provides primitives for communication.
 These communication primitives come in the form of asynchronous unidirectional
 channels and are used by both workers and operators, though in different ways:
 Workers use these channels for the exchange of progress tracking messages, while
-operators use them to push data along the dataflow edges.
+operators use them to push data along the dataflow edges. To ensure proper
+ordering, data sent to operators hosted on different workers is interleaved
+with progress tracking messages.
 
 \subsection{Programming Interface}
 
@@ -107,7 +109,8 @@ the dataflow graph. Operator outputs are represented
 by typed \lstinline{Stream} handles, which are used by succeeding operators
 to connect the stream to their input ports.
 
-\begin{lstlisting}[caption={[Example program in Timely Dataflow.]A trival 
+\begin{figure}
+\begin{lstlisting}[caption={[Example program in Timely Dataflow.]A simple 
 single-threaded example program which reads lines from standard input,
 converts them into integers and filters out odd numbers.}]
 timely::execute(Configuration::Thread, |root| {
@@ -128,23 +131,28 @@ timely::execute(Configuration::Thread, |root| {
   }
 })
 \end{lstlisting}
+\end{figure}
 
 \subsection{Worker Threads}
 
-Timely implements a data-parallel approach for its computation. This is done by
-instantiating the dataflow graph on multiple worker threads, where each worker
-drives the computation of its local instance. Workers can be distributed among multiple
-machines, where the computation consists of multiple operating system processes
-which are communicating with each other over the network. Such an
-operating system process might host multiple worker threads.
+Timely implements a data-parallel approach for its computation. The dataflow graph
+is instantiated on multiple worker threads, where each worker
+drives the computation of its local instance. All workers are fully connected
+and exchange data and progress tracking messages with their peers. Communication
+between workers is fully asynchronous, consistency is achieved through the
+progress tracking protocol. Workers can be distributed over multiple
+machines, meaning that the computation will be hosted by multiple operating
+system processes.
+In the current implementation, each process hosts the same number of
+workers, and processes communicate with each other over the network.
 
-\subsection{Run-time Graph Representation} \label{sec:runtime-graph}
+\subsection{Runtime Graph Representation} \label{sec:runtime-graph}
 
-When the execution on a worker starts, Timely assembles the run-time
-dataflow graph from the the user-provided dataflow description. The run-time
+When the execution on a worker starts, Timely assembles the runtime
+dataflow graph from the the user-provided dataflow description. The runtime
 representation consists of a list of operators and a list of edges between them.
 
-When operators are instantiated, they inform the run-time about which
+When operators are instantiated, they inform the runtime about which
 connections they have to other operators and provide an implementation
 of the \lstinline{Operate} interface, which is used by Timely for progress
 tracking and operator scheduling.
@@ -163,16 +171,16 @@ Once construction is complete, the dataflow graph cannot be changed anymore.
 Timely requires that every worker hosts exactly the same dataflow graph
 structure.
 
-During run-time, Timely's progress tracking will query the operator about its
+During runtime, Timely's progress tracking will query the operator about its
 internal progress, requiring the operator to report how many messages were
 consumed and produced on each input or output edge, and also which internal
 capabilities it holds on to. Notification about the frontier at the
 operator's input edge is also delivered over \lstinline{Operate} interface.
 
-A noteworthy aspect of the implementation is that the operator run-time interface
+A noteworthy aspect of this implementation is that the operator runtime interface
 is heavily oriented towards progress tracking, it is completely decoupled
 from message delivery.
-As a consequence, this run-time representation of the operator graph does
+As a consequence, this runtime representation of the operator graph does
 currently not allow for introspection of the operators logic, the type of data
 being processed or the contents of the message queues of a certain operator.
 % TODO maybe mention this has an impact on operator schedulign
@@ -199,13 +207,13 @@ using specialized endpoint allocators provided by
 \lstinline{time\-ly_\-com\-mu\-ni\-ca\-tion}. Messages are typically sent in
 batches, where all records within a batch share the same timestamp.
 
-The channel allocator provided by this crate is also used by the workers for
+The channel allocator provided by this library is also used by the workers for
 broadcasting and receiving progress messages. Communication between workers
 running in different processes communicate over TCP/IP, while workers within
 the same process use thread-safe FIFO queues to communicate.
 Serialization for communication over the network is done using a serialization
-library called Abomonation. It trades high performance serialization and 
-deserialization for type safety and requires the same in-memory data layout
+library called Abomonation. It trades type safety for high performance serialization and 
+deserialization, and requires the same in-memory data layout
 at both communication endpoints.
 
 \subsection{Deployment}
@@ -215,14 +223,15 @@ processes. These processes host all host the same user-provided number of
 worker threads an can be run on different machines. Starting a computation
 involves deploying compiled binary executable on all participating machines
 and spawning them it in parallel.
-The amount of worker threads needs to fixed for a given execution of the
+The amount of worker threads needs to be fixed for a given execution of the
 program, as all the workers are fully connected in order to be able to exchange
-messages. The addresses of any peer processes is provided programmatically
-or alternatively read from a text file. In all cases the worker configuration
+messages. The addresses of any peer processes are provided programmatically
+or alternatively read from a text file. Timely provides a function to assemble
+the configuration from command line arguments. The resulting worker configuration
 is represented by the \lstinline{Configuration} data type shown below:
 
 \begin{lstlisting}[caption={[Timely's worker configuration data type]
-Timely's worker configuration is one the three options. The parameters in 
+Timely's worker configuration can be one the three options. The parameters in 
 \lstinline{Cluster} indicates the number of threads per host, the index
 of the local host, the list of all participating hosts and a boolean flag
 to enable reporting.}]

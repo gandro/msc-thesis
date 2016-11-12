@@ -150,11 +150,11 @@ modular query for different amounts of worker threads in Figure~\ref{fig:times}.
 
     {\footnotesize
     \vspace{1em}
-    \begin{tabularx}{\textwidth}{ rXXXXXX }
+    \begin{tabularx}{\textwidth}{ rXXXXXXXX }
       \hline 
-      \textsc{Threads} & 4 & 8 & 12 & 16 & 24 & 32 \\
+      \textsc{Threads} & 1 & 2 & 4 & 8 & 12 & 16 & 24 & 32 \\
       \hline 
-      \textsc{Overhead} & 17.2\%&13.7\%&14.0\%&18.8\%&14.4\%&13.5\% \\
+      \textsc{Overhead} & 22.1\%&21.8\%&17.1\%&13.9\%&14.0\%&19.3\%&15.6\%&14.9\% \\ %17.2\%&13.7\%&14.0\%&18.8\%&14.4\%&13.5\% \\
       \hline
     \end{tabularx}
     }
@@ -185,6 +185,8 @@ in section~\ref{sec:evalnuma} that other factors such as placement also
 impact the overhead.
 
 \subsection{Worker Utilization Factor}
+
+\TODO{rewrite, this seems confusing}
 
 In this section we present the average measured utilization \emph{per worker},
 i.e. the proportion of time a worker thread performs useful work.
@@ -264,15 +266,16 @@ also see that the sessionization stage is the most compute heavy.
 
 \begin{figure}[p]
   \centering
+    \includegraphics[width=1\textwidth]{figures/evaluation/rsssess}
     \includegraphics[width=1\textwidth]{figures/evaluation/rss}
 
     {\footnotesize
     \vspace{1em}
-    \begin{tabularx}{\textwidth}{ rXXXXXX }
+    \begin{tabularx}{\textwidth}{ rXXXXXXXX }
       \hline 
-      \textsc{Threads} & 4 & 8 & 12 & 16 & 24 & 32 \\
+      \textsc{Threads} & 1 & 2 & 4 & 8 & 12 & 16 & 24 & 32 \\
       \hline 
-      \textsc{Overhead} & 7.9\%&10.3\%&10.6\%&9.7\%&13.7\%&13.5\%\\
+      \textsc{Overhead} & 10.3\%&12.7\%&8.7\%&10.9\%&10.6\%&9.2\%&13.7\%&13.4\% \\ % 7.9\%&10.3\%&10.6\%&9.7\%&13.7\%&13.5\%\\
       \hline
     \end{tabularx}
     }
