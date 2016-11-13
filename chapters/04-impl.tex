@@ -113,7 +113,7 @@ which made code both hard to read and inconvenient to write.
 This motivated us to re-design the coordinator around a central task dispatch loop, which
 allows us to multiplex many asynchronous tasks within the same thread. We decided to adapt
 an external library called \lstinline{future-rs} \cite{futuresrs} for this purpose.
-It provides a expressive interface for dealing with asynchronous tasks based
+It provides an expressive interface for dealing with asynchronous tasks based
 on the concept of \emph{futures}. Futures (sometimes called promises, eventuals
 or deferred objects) are proxy objects for absent values, which eventually will
 be provided through some asynchronous event.
@@ -151,11 +151,9 @@ The motivation for the names in this interface comes from the fact that model
 each concurrently running task as a chain of futures, basically treating them as
 coroutines.
 
-\begin{comment}
-
 Listing~\ref{lst:coorddispatch} shows an example of this. Our networking layer
 models the server socket as a future which yields a stream of incoming connections.
-Each connection itself then maintains a queue for incoming requests, which is
+Each connection itself is then maintains a queue for incoming requests, which is
 also modeled as a future, allowing the user to specify actions to be taken
 once a request is received.
 
@@ -163,18 +161,29 @@ once a request is received.
 \begin{lstlisting}[caption={[Connection handling at the coordinator]%
 Accepting and dispatching incoming connections. The actions specified
 in \lstinline{for_each} and \lstinline{map_err} are invoked by the
-event loop if the corresponding events (such as new incoming connections,
+task dispatcher when the corresponding events (such as new incoming connections,
 new incoming requests or errors during request handling) occur.},label={lst:coorddispatch}]
-// `listener` is future yielding a stream of accepted connections
+// a future yielding a stream of accepted connections
 let listener = network.listen(9189);
 // define the action to be executed for each incoming connection
 let server = listener.for_each(|connection| {
-    // queue pair for outgoing/incoming requests
-    let (tx, rx) = connection;
-   
+    ...   
     // this action is invoked for each incoming request
-    let client = rx.for_each(move |request| {
+    let client = requests.for_each(move |request| {
         // decode and dispatch request 
+        match request.name() {
+          "Subscribe" => {
+            let (req, resp) = req.decode::<Subscribe>();
+            // forward the request to the request handler,
+            // which will return a future (see Listing 4.2)
+            let subscribe = request_handler
+              .subscribe(req)
+              .then(|result| Ok(resp.respond(result)));
+            // complete this task asynchronously
+            async::spawn(subscribe);
+          }
+          ...
+        }
         ...
     }).map_err(|err| {
         // futures can also yield error values
@@ -182,7 +191,7 @@ let server = listener.for_each(|connection| {
         error!("failed to dispatch request: {:?}", err)
     });
 
-    // register client handlers in event loop
+    // handle client asynchronously
     Ok(async::spawn(client));
 });
 
@@ -190,8 +199,6 @@ let server = listener.for_each(|connection| {
 async::finish(server);
 \end{lstlisting}
 \end{figure}
-
-\end{comment}
 
 \begin{figure}[p]
 \begin{lstlisting}[caption={[Handler for blocking subscription requests]
@@ -248,14 +255,14 @@ impl RequestHandler {
 The nature of the coordinator requires it to mutate its internal state on
 behalf of the connected clients. This means that we have to provide each
 connection handler with mutable access to the central request handler. 
-In addition to this, we also want to keep track of the requests submitted by
+In addition, we also want to keep track of the requests submitted by
 each connection, so we can clean up any associated global state if a connection
 disappears.
 
 For this reason, we provide a wrapper type for accessing the methods of the
 request handler. For each connection, this proxy maintains a simple list of
 identifiers for objects that are conceptually owned by the connection, ensuring that the state is
-remove from the catalog once the connection drops. Examples of this are the removal
+removed from the catalog once the connection drops. Examples of this are the removal
 of disconnected executors from the catalog, or the depublication of topics
 owned by crashed queries. The proxy object internally uses Rust's
 \lstinline{RefCell<T>} type to dynamically ensure the strict language
@@ -273,7 +280,7 @@ to the schema shown in Figure~\ref{fig:model}.
 \begin{figure}[htb]
   \centering
     \includegraphics[width=0.5\textwidth]{figures/model}
-  \caption[Schema of the catalog.]{Schema of the catalog. All five data types
+  \caption[Schema of the catalog]{Schema of the catalog. All five data types
   are published as a collection topic, allowing users to follow state changes
   in the system.}
   \label{fig:model}
@@ -336,7 +343,7 @@ name of the topic.
 
 \begin{figure}[h!]
 \begin{lstlisting}[caption={
-Example how topics can be published in partitions. 
+Publishing partitioned topics.
 }]
 timely_query::execute(|root, coord| {
     root.scoped::<u64, _, _>(|scope| {
@@ -401,6 +408,16 @@ Note that even though each subscription request is disclosed to the coordinator
 by subscribing queries, publishers are not informed by the coordinator about new subscribers. Publishers
 see new subscribers only once they connect to the publisher's network socket. 
 The information stored in the catalog is only exposed for inspection by the user.
+Figure~\ref{fig:pubsubseq} shows hows the sequence for publishing a new topic.
+
+\begin{figure}[htb]
+  \centering
+    \vspace{1em}
+    \includegraphics[width=1\textwidth]{figures/pubsubseq}
+  \caption[Publish/subscribe sequence diagram]{Sequence diagram for the publish/subscribe procedure. Any data
+  produced before the subscriber connects might be lost.}
+  \label{fig:pubsubseq}
+\end{figure}
 
 \subsubsection{Subscriber}
 
@@ -438,7 +455,7 @@ provide the initial root capability for the input.
 \begin{lstlisting}[caption={[Typical use of the subscription handle]
 Typical use of the subscription handle. This query subscribes to a single topic of
 strings, with \lstinline{u64} being the type of the timestamps.
-}]
+},label={lst:subhandle}]
 timely_query::execute(|root, coord| {
 
     let (mut input, cap) = root.scoped::<u64, _, _>(|scope| {
@@ -469,8 +486,11 @@ gives the most flexibility to the query author.
 
 Because the root capability can be cloned, this interface also allows the user to
 interleave the data from a topic with other data, for example by merging
-multiple topics at the input.
+multiple topics at the input. Our subscription handle implements the
+\lstinline{futures-rs} stream interface, allowing the client code to wait for
+data from multiple subscriptions at once.
 
+\clearpage
 \section{Shared Communications Layer}
 
 For the remainder of this chapter we discuss the networking layer of our system,
@@ -482,21 +502,18 @@ Our system consists of potentially many distributed processes. These processes
 are running concurrently, are dynamically added and removed from the system
 and are communicating with each other. In order to deal with the inherent
 complexity of such a system, we adopted an actor-model like approach for our
-implementation.
-
-\TODO{this actor definition seems confusing}
+networking implementation.
 
 Actors in our system include processes like the coordinator, the executors 
-and the query processes. However, as Timely by itself could be seen as an
-actor system, operators like the publish or subscribe operators are also actors
-directly interacting with our system.
+and the query processes. But we also treat the publish or subscribe operators
+as actors, as they directly interacting with our system.
 
 To support this kind of model, our networking layer also works in terms of
 asynchronous messages. In contrast to Timely's own networking layer which also
-provides a similar abstraction, we cannot assume a fixed number of actors.
+provides a similar abstraction, we cannot assume a fixed number of components.
 In order to establish a connection between two components, one of them has to
 take on the role of the server, while the other one acts as a client. Two
-queues are allocated per connection on each actor: one for incoming messages
+queues are allocated per connection on each side: one for incoming messages
 and one for outgoing messages. This enables messages to be sent asynchronously
 in both directions. Network failures are signaled in the queue for incoming
 messages. Currently, Rust's standard library TCP sockets are used as the
@@ -506,12 +523,12 @@ support alternative transport layers as well.
 \subsection{Request \& Response Messages} \label{sec:reqresp}
 
 While the abstraction of single messages is sufficient for implementing the
-mostly unidirectional messaging paradigm of the publish/subscribe implementation,
+mostly unidirectional messaging paradigm of the publish-subscribe implementation,
 most other communication in the system follows a request-response pattern,
 e.g. any communication with the coordinator.
 
 For this reason, we implemented a request-response multiplexer on
-top of the plain message channels. This multiplexer allows both actors to have
+top of the plain message channels. This multiplexer allows both sides to have
 multiple requests in flight while waiting for the corresponding responses,
 which can be delivered out of order.
 

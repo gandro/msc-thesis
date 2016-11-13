@@ -15,12 +15,12 @@ on a realistic workload.
 \paragraph{Experimental Setup}
 
 All experiments are executed on a dual-socket Intel Xeon E5-2650
-machine (2.0GHz, 8 cores per socket, 2 threads per core) with 64 GB RAM. All components and
+machine (2.0 GHz, 8 cores per socket, 2 threads per core) with 64 GB RAM. All components and
 queries in our system are compiled with a Rust 1.14 nightly build (2016-10-20)
 and executed on Debian 7.8. The input data is read from a SAN storage attached
 via iSCSI on a private 10 Gbit Ethernet network.
 
-\section{Query composition for sessionization}
+\section{Query Composition for Sessionization}
 
 The dataflow computation in this experiment is based on \emph{sessionization},
 i.e. the reconstruction of user sessions from a trace of log events.
@@ -60,7 +60,7 @@ After the sessionization, the computation performs a set of statistics on the
 reconstructed sessions. The stages are described below, the resulting dataflow
 graph is shown in Figure~\ref{fig:monolith}
 
-Messages are shuffeled according to their session identifier for the
+Messages are shuffled according to their session identifier for the
 sessionization stage, and are processed in parallel until statistics are
 collected for the output, which is emitted at a single worker. 
 
@@ -154,6 +154,9 @@ modular query for different amounts of worker threads in Figure~\ref{fig:times}.
       \hline 
       \textsc{Threads} & 1 & 2 & 4 & 8 & 12 & 16 & 24 & 32 \\
       \hline 
+      \textsc{Monolith [s]} & 37,122 & 19,098 & 10,057 & 5,731 & 4,708 & 3,385 & 3,555 & 3,024 \\
+      \textsc{Modular [s]}  & 45,312 & 23,252 & 11,776 & 6,530 & 5,365 & 4,039 & 4,108 & 3,475 \\
+      \hline
       \textsc{Overhead} & 22.1\%&21.8\%&17.1\%&13.9\%&14.0\%&19.3\%&15.6\%&14.9\% \\ %17.2\%&13.7\%&14.0\%&18.8\%&14.4\%&13.5\% \\
       \hline
     \end{tabularx}
@@ -179,14 +182,12 @@ of one hour with 32 workers. Further work has to be done to investigate where
 exactly the overhead comes from and optimize our system accordingly, such that
 we achieve real-time performance with less workers.
 
-The relative overhead varies between 13-18\%. It should be noted that relative
+The relative overhead varies between 14-22\%. It should be noted that relative
 overhead is not proportional to the number of worker threads. We will show
 in section~\ref{sec:evalnuma} that other factors such as placement also
 impact the overhead.
 
 \subsection{Worker Utilization Factor}
-
-\TODO{rewrite, this seems confusing}
 
 In this section we present the average measured utilization \emph{per worker},
 i.e. the proportion of time a worker thread performs useful work.
@@ -200,14 +201,22 @@ To put it another way, a worker is \emph{not busy} if it is waiting on external 
 This is the case if it wait on input from a topic in the case of the subscribers, 
 or if it reads data from disk in the case of the sessionization stage.
 
-Figure~\ref{fig:subutil} shows the average utilization for the subscribers, while
 Figure~\ref{fig:sessutil} shows the utilization for the whole monolithic query
-compared to the sessionization stage of the modular query. 
+compared to the sessionization stage of the modular query. The general trend
+for both versions is that utilization increases, i.e. the individual workers
+spend less time waiting on input from disk. This is to be expected, as with more workers,
+each worker has to read less input data. Note that the two versions do not perform
+the same amount of work: The monolithic query contains all stages of the dataflow
+graph, while the sessionization query contains only the first. With 8 and more
+workers, the modular version has a higher utilization. We assume that this is
+caused by the fact that the publisher starts to dominate the execution overhead. 
 
-We see that in all cases the average utilization in the sessionization workers
+Figure~\ref{fig:subutil} shows the average utilization for the subscribers. In
+contrast to the first stage, their utilization decreases with more workers. 
+Compared to Figure~\ref{fig:sessutil}, we see that in all cases the average utilization in the sessionization workers
 is significantly higher than in the other queries of the modular version. This indicates
 that the sessionization stage itself the bottleneck of the computation. 
-We see that with a high number of worker threads, individual workers are proportionally
+We see that with a higher number of worker threads, individual workers are proportionally
 spending more and more time waiting for input.
 
 This suggests that using the same amount of workers for all queries might
@@ -219,27 +228,33 @@ the queries source code.
 
 \begin{figure}[p]
   \centering
+    \includegraphics[width=1\textwidth]{figures/evaluation/sessutil}
+    \caption[Utilization of sessionization workers]{Utilization of the the monolithic
+    version compared to the sessionization stage of the modular version.}
+    \label{fig:sessutil}
+\end{figure}
+\begin{figure}[p]
+  \centering
     \includegraphics[width=1\textwidth]{figures/evaluation/subsutil}
-    \caption[Subscriber worker utilization]{Utilization for the individual
+    \caption[Utilization of subscribing workers]{Utilization for the individual
     subscribers in the modular version.}
     \label{fig:subutil}
 \end{figure}
 
-\begin{figure}[p]
-  \centering
-    \includegraphics[width=1\textwidth]{figures/evaluation/sessutil}
-    \caption[Sessionization worker utilization]{Utilization of the sessionization stage
-    in the monolithic and the modular version.}
-    \label{fig:sessutil}
-\end{figure}
 \clearpage
-\subsection{Memory consumption and processor utilization}
+\subsection{Memory Consumption and Processor Utilization}
 
-Figures \ref{fig:rss} and \ref{fig:cpu} report the processor utilization and peak
+Figures \ref{fig:rss} and \ref{fig:cpu} show the processor utilization and peak
 memory consumption for the different processes, as reported by the operating
-system.
+system. Given that the processes communicate over the loopback device,
+we do not measure the networking throughput.
 
 \paragraph{Memory Consumption}
+
+Given the memory requirements sessionization task, we split Figure \ref{fig:rss}
+into two graphs: The upper graph compares the sessionization query 
+of the composed version with the memory consumption of the whole monolithic
+query, while the lower graph shows the memory footprint for the remaining queries.
 
 We immediately see that the sessionization query of the composed version
 consumes the most memory. This is caused by the fact that the re-ordering
@@ -247,21 +262,23 @@ and sessionization buffers incoming messages until certain epochs are completed.
 Also with regard to the sessionization query, we see that its memory footprint
 is higher than memory consumption for the monolithic version, even though
 it performs less work. We assume that this is caused by the queuing of
-outgoing messages at the publisher.
+outgoing messages at the publisher. As we add more workers, the consumers are
+better able to catch up and the queue shrinks.
 
 Another contributing factor to the overhead is the fact the we run additional
-operating system processes, each one with a large set of worker threads.
-
-\TODO{maybe split the figure in two separate figures, one for the subscribers
-and one for sessionization}
+operating system processes, each one with a large set of worker threads. This
+growth can be observed in the lower graph of Figure~\ref{fig:rss}, as the
+memory overhead grows even though the amount of processed data stays the same.
 
 \paragraph{Processor Utilization}
 
 We also report the overall processor utilization reported by the operating system.
 A value of 100\% would correspond to the full utilization of all 32 logical cores.
 We see that neither versions manage to fully utilize the processors over then duration of
-the whole computation. This is indicates that both versions are sometimes blocked
-on external input. Consistent with the observations from worker utilization, we
+the whole computation. This indicates that both versions are sometimes blocked
+on external input. This is to be expected, as the workers switch between
+reading input and processing the data within the same thread.
+ Consistent with the observations from worker utilization, we
 also see that the sessionization stage is the most compute heavy.
 
 \begin{figure}[p]
@@ -280,8 +297,10 @@ also see that the sessionization stage is the most compute heavy.
     \end{tabularx}
     }
     \caption[Peak memory consumption]{Peak memory consumption of the different
-    processes. The left bar shows the monolithic query, the right bar shows the memory
-    used per query processed of the composed version.}
+    processes. The left bar in the upper graph shows the monolithic query, the
+    right bar in the upper graph shows the memory consumption of the sessionization
+    stage of the modular query. The lower graph shows the memory used by the
+    other queries of the modular version.}
     \label{fig:rss}
 \end{figure}
 
@@ -296,8 +315,12 @@ also see that the sessionization stage is the most compute heavy.
 \clearpage
 \subsection{Impact of Worker Placement} \label{sec:evalnuma}
 
-In the above experiments, we prefer running as many workers as possible
-on a single processor socket (with the exception of hyper-threads).
+In the previous experiments, we prefer running as many workers as possible
+on a single processor socket (with the exception of hyper-threads). Because
+the modularized version has to copy the data from one process to the next one,
+and thus data might move from one socket to the other, we expect that the
+worker placement will have an impact on performance.
+
 Figure~\ref{fig:numa} compares execution time of this strategy compared to a
 strategy where we balance the workers evenly between sockets. With 12 workers
 we are unable put all threads on a single socket, and we see that in this case
@@ -306,7 +329,7 @@ it is slightly beneficial to balance the threads evenly.
 The impact of using different placements is relatively small for the
 monolithic query. The modular version however is more sensitive to
 different placement strategies, resulting in changes to the overhead
-of the execution time. 
+of the execution time.
 
 \begin{figure}[h]
   \centering
@@ -324,7 +347,7 @@ of the execution time.
       \hline
     \end{tabularx}
     }
-    \caption[Execution time for different of worker placement]{Execution times for
+    \caption[Execution time for different worker placements]{Execution times for
     different worker-to-processor mappings. The placement describes the number of
     worker threads placed on each of the two processor sockets.}
     \label{fig:numa}
@@ -335,7 +358,7 @@ of the execution time.
 
 In this chapter we presented an experimental evaluation of the overhead of
 query composition in our system. The results show that the modular version in
-our setting takes about 13-18\% longer to execute and consumes 8-14\% more
+our setting takes about 1-18\% longer to execute and consumes 8-14\% more
 memory. While this is not negligible, we are confident that a modular version
 of sessionization would be able to keep up with real-time processing, given
 enough resources.
@@ -348,8 +371,9 @@ For one, future experiments should evaluate the performance of modular sessioniz
 in a cluster of machines. We only ran our experiments on a single machine, meaning that
 data shared in topics was transmitted over the loopback interface.
 Having publishers on one machine and subscribers on another would certainly yield
-different performance characteristics. The monolithic version would also
-likely show a different performance behavior, as workers would have to shuffle their data over the
+different performance characteristics, due to the network between them.
+The monolithic version would also likely show a different performance behavior,
+as workers would have to shuffle their data over the
 network instead of using shared memory queues.
 
 In addition, we did not perform any microbenchmarks to evaluate the performance

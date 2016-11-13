@@ -110,7 +110,7 @@ by typed \lstinline{Stream} handles, which are used by succeeding operators
 to connect the stream to their input ports.
 
 \begin{figure}
-\begin{lstlisting}[caption={[Example program in Timely Dataflow.]A simple 
+\begin{lstlisting}[caption={[Example program in Timely Dataflow]A simple 
 single-threaded example program which reads lines from standard input,
 converts them into integers and filters out odd numbers.}]
 timely::execute(Configuration::Thread, |root| {
@@ -167,8 +167,8 @@ tracking for its children. The operator interface is also used by parents
 to inform their children about the initial capabilities and path summaries
 of their surroundings.
 
-Once construction is complete, the dataflow graph cannot be changed anymore.
-Timely requires that every worker hosts exactly the same dataflow graph
+Once construction is complete, the resulting dataflow graph cannot be changed anymore.
+In addition, Timely requires that every worker hosts exactly the same dataflow graph
 structure.
 
 During runtime, Timely's progress tracking will query the operator about its

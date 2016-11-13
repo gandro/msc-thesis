@@ -26,37 +26,40 @@ builds upon the Rust implementation of the timely dataflow model,
 simply called \textquote{Timely Dataflow}\footnote{We use the capitalized term
 for the implementation, while the model is referred to in lower-case.} \cite{timely}.
 
-\section{Contributions}
-
 Being an embeddable library, the current runtime of Timely Dataflow only
 concerns itself with the execution and scheduling of a single processing job.
 This results in a tendency towards large, monolithic dataflow graphs which
 perform many different tasks at the same time. While these monolithic computations
 are highly efficient in terms of resource usage, this comes at a cost with regard
 to maintainability and extensibility. Attaching an additional stage to a monolithic
-dataflow graph cannot be done for an online computation without restarting the
-whole application.
+dataflow graph cannot be done for an online application without restarting the
+whole computation.
 
-While Timely Dataflow does support the distributed execution of a dataflow computation
-on a statically sized cluster, launching and deployment of the the compiled
-application binary has to be done manually by the user: They have to provide the
-addresses of all participating machines to each process separately.
+Furthermore, while Timely Dataflow does support the distributed execution of
+a dataflow computation on a statically sized cluster, launching and deployment
+of the compiled application binary has to be done manually by the user. This
+can quickly become inconvenient if many different dataflow computations have
+to be deployed.
 
-The contribution of this thesis is the design and implementation of a system which
-aims to improve the deployment of Timely Dataflow by providing the following
+While Timely Dataflow has been successfully used for online streaming applications,
+we believe that further improvements can be made in terms of usability and composability.
+Specifically, we wish to ease the deployment of multiple concurrent
+dataflow computations, the management of the compute cluster, and we want to
+assist with the use of shared data sources.
+
+\section{Contributions}
+
+The contribution of this thesis is the design and implementation of a system
+for the deployment of Timely Dataflow applications. It provides the following
 features:
 
-- 
-
 \begin{itemize}
-\item Handling of the deployment and execution of multiple concurrent dataflow programs.
-\item Providing interfaces for the submission of dataflow programs.
+\item Handling the submission and execution of multiple concurrent dataflow programs.
 \item Dynamic addition and limited removal of machines to the cluster.
-\item Managing of data streams consumed and produced by the running dataflow computations.
-\item Allowing system introspection by exposing metadata about the current system state.
+\item An integrated publish/subscribe system which allows dataflow programs to share their produced streams
+      for consumption by other running computations.
+\item Enabling system introspection by exposing metadata about the current system state.
 \end{itemize}
-
-\TODO{sketch how this is relevant}
 
 \section{Outline}
 

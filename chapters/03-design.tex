@@ -75,7 +75,7 @@ instead of calling Time\-ly's initialization function directly.
 
 This means that in order for a Timely Dataflow program to become a runnable
 query in our the system, it needs to link against our \lstinline{timely_query} library.
-This library not only performs the initialization of the Timely run-time, it also
+This library not only performs the initialization of the Timely runtime, it also
 provides additional functionality to interact with the coordinator, which we
 describe below in section \fullref{sec:sharingstreams}.
 
@@ -109,7 +109,7 @@ report their internal state, every executor and query process maintains a
 network connection to the coordinator.
 
 Bookkeeping of the system is done by the coordinator in the catalog. The
-catalog is a datastructure which contains all information about the available
+catalog is a datastructure which contains the metadata about the available
 executors, the running queries and their workers. This data is exposed to
 queries through so called \emph{collection topics}, which we will describe
 below. This allows queries to introspect the system state using Timely operators.
@@ -141,8 +141,8 @@ is reported to be completed.
 \begin{figure}[htb]
   \centering
     \includegraphics[width=1\textwidth]{figures/spawn_singleprocess}
-  \caption[Query submission with single process.]{Submission of a query on a single executor.
-  Only once the spawned query announces itself at the coordinator is it considered running.}
+  \caption[Query submission with a single process]{Submission of a query on a single executor.
+  Only when the spawned query announces itself at the coordinator is it considered running.}
   \label{fig:subsingle}
 \end{figure}
 
@@ -157,7 +157,8 @@ a way for adding new machines to the cluster running our system. The catalog
 maintains the pool of available executors which are participating in the system.
 
 As a timely program can span over multiple machines, a query might span
-over multiple executors. The placement of a query on the available executors
+over multiple executors, allowing it to run in a cluster.
+The placement of a query on the available executors
 is performed by the coordinator, based on the users request.
 We currently implement a naive approach to query placement, where the executors
 are chosen randomly if the user does not manually specify a placement. A more
@@ -179,14 +180,14 @@ the address of the coordinator, the addresses of any peer processes belonging to
 same query, and the number of worker threads to spawn inside this process.
 
 Executors are also responsible for fetching any query binaries they are supposed
-to spawn. When submitting a new query, the submitter has to provide coordinator
+to spawn. When submitting a new query, the submitter has to provide  thecoordinator
 with the location of the binary. This location is forwarded to participating executors,
 which will use it to load the query binary. 
 
 Since executors serve as a provider for computational resources such as machines,
 there is typically a one-to-one mapping between executors and the machines they
 are running on. This however is not a requirement of the system, the deployment of
-executors is left to the user. Similarly, the user is free spawn multiple
+executors is left to the user. Similarly, the user is free to spawn multiple
 processes belonging to the same query on the same executor if they wish to do so.
 
 Since operating system processes can outlive their parent process, executors can
@@ -221,7 +222,7 @@ queries.
 We implement this in the form of a topic-based publish/subscribe system:
 Using the \emph{publish} operator, a query can expose one of its streams
 (an edge in the dataflow graph) to other queries, which in turn then \emph{subscribe}
-to it. The list of all published topics is stored at in the catalog.
+to it. The list of all published topics is stored in the catalog.
 
 The reason for choosing a topic-based publish/subscribe system over a
 content- or type-based one is dictated by the fact that Rust allows for little
@@ -256,6 +257,17 @@ and the catalog contains a list of all existing topics, the
 actual exchange of data happens directly between queries. When a query subscribes
 to a topic, it receives the address of the topic's publisher from the coordinator
 and directly connects to it.
+
+\begin{figure}[htb]
+  \centering
+    \includegraphics[width=1\textwidth]{figures/pubsub}
+  \caption[Publisher and subscribers]{
+  When publishing some data stream, the producing query can decide
+  to merge the different stream partitions.}
+  \label{fig:pubsubfig}
+\end{figure}
+
+\clearpage
 
 \subsection{Stream Publisher}
 
@@ -307,12 +319,12 @@ do not append timestamps to the update messages.
 \subsection{Subscriber}
 
 In order to subscribe to a topic, the subscribing query has to provide the name
-of the topic it is interested in. This involves a name lookup which can optionally
+of the topic that it is interested in. This involves a name lookup which can optionally
 be blocking: If a requested topic does not yet exist, the coordinator will add
 the subscriber to a wait list. Once a corresponding topic is published under that
 name, the coordinator will inform the subscriber about this topic. 
 
-The subscribing query is free to subscribe to multiple topics. It the query's
+The subscribing query is free to subscribe to multiple topics. It is the query's
 responsibility to merge and feed the data streams into the dataflow graph.
 
 \subsection{Comparison with Timely's Capture \& Replay}
@@ -330,5 +342,5 @@ producing queries are allowed to discard data if there are no consumers.
 
 It is the responsibility of the user to provide a communication channel between
 capture and  replay operators. Adapters exist for Rust's thread-safe FIFO queues,
-single-threaded queues, file handles and sockets.
+single-threaded queues, file handles, and sockets.
 

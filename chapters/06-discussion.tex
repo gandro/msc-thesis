@@ -197,7 +197,7 @@ on behalf of the computations, computations for a certain key can be moved
 for load-balancing or restarted in the case of failures.
 
 \cleardoublepage
-\chapter{Future Work \& Conclusions} \label{ch:future}
+\chapter{Future Work \& Conclusion} \label{ch:future}
 
 \section{Future Work}
 
@@ -292,7 +292,7 @@ An example of such an optimization is shown in Figure~\ref{fig:queryoptimization
   \end{center}
   \vspace{-1.2em}
   \includegraphics[scale=0.36]{figures/composition/q1q2_auto}
-  \caption[Work duplication through derived topics]{
+  \caption[Work deduplication through derived topics]{
   Work duplication through derived topics. By tapping into dataflow edges
   of the publishing query, the system can optimize the newly arrived
   subscribing query.}
@@ -344,7 +344,7 @@ addition of probes which indicate the subscribers progress. These would then
 be used to throttle the input of the publishing query. Previous work \cite{faucet} has
 successfully demonstrated the use of such a flow control mechanism within the
 scope of a single query, future work would have to explore how to integrate
-this with our system.
+this in our system.
 
 Tightly coupled queries can already implement such an approach today, as our
 system allows two queries to subscribe to each other: Besides the topic published by the producer and
@@ -384,22 +384,33 @@ data based on the provided filters. This approach would be similar to
 content-based filtering and routing found in other publish/subscribe systems
 \cite{pubsub}.
 
-\clearpage
-\section{Conclusions}
+\section{Conclusion}
 
-\TODO{rewrite}
+In this thesis, we have presented a system for deploying Timely Dataflow
+applications. Our approach is based on the assumption that individually
+submitted queries are not developed and executed in isolation, but rather that
+they are small parts of a larger overall application. For this reason, we focused 
+not only on how to share common input sources, but also on how queries can
+share their results with their peers.
 
-In this work we have presented a system for deploying Timely Dataflow applications.
-In addition to managing the submission of dataflow programs for execution
-on a cluster, we also provide facilities for these computations to publish
-their streams for consumption by other queries. 
+We presented an implementation which can deal with the concurrent submission
+of queries, allows the dynamic addition of new machines to the cluster, and
+permits queries to inspect the current system state. We extended Timely
+Dataflow with a publish/subscribe mechanism that integrates Timely's progress
+tracking mechanism and enables the composition of queries.
 
-This functionality is used by the
-system catalog to expose metadata about the current system state, but more
-importantly, it can also be used for query composition.
+We demonstrated how this manual query composition performs on a realistic workload.
+While our evaluation shows that the overhead is not negligible, we are confident
+that further investigations and subsequent optimizations can successfully
+reduce this overhead.
 
-We demonstrated that query composition can be used to modularize a computation
-based on a realistic workload and show that doing so imposes acceptable costs
-in terms of memory consumption and execution time overhead.
+Our system was designed with future extensions in mind. We shared some preliminary ideas
+how data streams of running queries could be exposed retroactively, to allow more
+flexible query composition. We also expect
+that the overhead of serialization in our publish/subscribe system could be
+avoided by having the executor load the subscribing queries in the address space of
+the subscriber.
 
-
+We believe that our work, while by itself not particularly novel in its
+individual features, is a solid building block which will enable the development
+and implementation of future Timely Dataflow based applications.
